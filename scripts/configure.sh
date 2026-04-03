@@ -9,7 +9,7 @@
 #   sudo ./configure.sh
 #
 # The configuration file is stored in the primary user's home directory
-# with restricted permissions (readable only by root and the primary user).
+# with permissions allowing the primary user and the agent group to read it.
 # =========================================================================
 set -euo pipefail
 
@@ -258,9 +258,11 @@ cat > "$CONFIG_FILE" <<EOF
 }
 EOF
 
-# Set permissions: readable only by root and primary_user
-chown "${PRIMARY_USER}:${PRIMARY_USER}" "$CONFIG_FILE"
-chmod 600 "$CONFIG_FILE"
+# Set permissions: readable by primary_user and agent group
+# Create the group if it doesn't exist yet (setup.sh will also ensure it exists)
+groupadd -f "${AGENT_GROUP}" 2>/dev/null || true
+chown "${PRIMARY_USER}:${AGENT_GROUP}" "$CONFIG_FILE"
+chmod 640 "$CONFIG_FILE"
 
 echo ""
 echo -e "${BOLD}=================================================================${RESET}"

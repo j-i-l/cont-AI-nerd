@@ -238,7 +238,12 @@ systemctl daemon-reload
 systemctl stop cont-ai-nerd-watcher.service 2>/dev/null || true
 systemctl stop cont-ai-nerd.service 2>/dev/null || true
 
-systemctl enable --now cont-ai-nerd.service
+# Quadlet-generated units cannot be "enabled" — they're transient.
+# The [Install] section in the .container file handles WantedBy.
+# Just start the service; it will auto-start on boot via the generator.
+systemctl start cont-ai-nerd.service
+
+# These are regular unit files in /etc/systemd/system, so enable works:
 systemctl enable --now cont-ai-nerd-watcher.service
 systemctl enable --now cont-ai-nerd-commit.timer
 

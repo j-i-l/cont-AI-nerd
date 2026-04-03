@@ -1,0 +1,50 @@
+# cont-ai-nerd — Sandboxed AI Agent Container Image
+# Build: sudo podman build --build-arg AGENT_UID=<uid> --build-arg AGENT_GID=<gid> -t cont-ai-nerd .
+FROM ubuntu:24.04
+
+ARG AGENT_UID=1001
+ARG AGENT_GID=1001
+
+# Minimal runtime dependencies.
+# inotify-tools is included for potential in-container watchers.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      git \
+      inotify-tools \
+      jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download the opencode binary from GitHub releases.
+# Override OPENCODE_VERSION at build time to pin a specific release.
+ARG OPENCODE_VERSION=latest
+RUN set -e; \
+    if [ "$OPENCODE_VERSION" = "latest" ]; then \
+      url="https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz"; \
+    else \
+      url="https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz"; \
+    fi; \
+    curl -fsSL "$url" -o /tmp/opencode.tar.gz && \
+    tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && \
+    chmod 755 /usr/local/bin/opencode && \
+    rm /tmp/opencode.tar.gz
+
+# Create the agent user and ai group with IDs matching the host.
+RUN groupadd -g "${AGENT_GID}" ai && \
+    useradd -u "${AGENT_UID}" -g ai -m -s /bin/bash agent
+
+# Persistent tool directory — survives via overlay commits.
+# The agent can install linters, language servers, etc. here.
+RUN mkdir -p /opt/tools/bin && chown -R agent:ai /opt/tools
+ENV PATH="/opt/tools/bin:${PATH}"
+
+# Config directory for the cont-ai-nerd policy file.
+RUN mkdir -p /etc/cont-ai-nerd && chown agent:ai /etc/cont-ai-nerd
+
+# Workspace is the bind-mount target for project directories.
+RUN mkdir -p /workspace && chown agent:ai /workspace
+
+USER agent
+WORKDIR /workspace
+
+ENTRYPOINT ["opencode"]

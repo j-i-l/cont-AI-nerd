@@ -1,0 +1,22 @@
+# systemd unit — cont-ai-nerd file-ownership watcher
+# TEMPLATE: setup.sh renders this into /etc/systemd/system/
+#
+# Placeholders:
+#   @@INSTALL_DIR@@ — directory containing the watcher script
+#   @@PRIMARY_USER@@— login name of the human user
+#   @@AGENT_USER@@  — login name of the container agent user
+#   @@WATCH_DIRS@@  — space-separated list of directories to watch
+
+[Unit]
+Description=cont-ai-nerd File Ownership Watcher
+After=cont-ai-nerd.service
+BindsTo=cont-ai-nerd.service
+
+[Service]
+Type=simple
+ExecStart=@@INSTALL_DIR@@/cont-ai-nerd-watcher.sh @@PRIMARY_USER@@ @@AGENT_USER@@ @@WATCH_DIRS@@
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

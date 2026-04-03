@@ -10,7 +10,7 @@
 [Unit]
 Description=cont-ai-nerd File Ownership Watcher
 After=cont-ai-nerd.service
-BindsTo=cont-ai-nerd.service
+Wants=cont-ai-nerd.service
 
 [Service]
 Type=simple

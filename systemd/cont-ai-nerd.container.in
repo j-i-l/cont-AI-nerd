@@ -32,6 +32,9 @@ Group=@@AGENT_GID@@
 # cont-ai-nerd generated policy (external_directory allow-list, read-only)
 Volume=@@CONTAINERD_CONFIG@@/opencode.json:/etc/cont-ai-nerd/opencode.json:ro
 
+# cont-ai-nerd configuration (for opencode-tui wrapper)
+Volume=@@CONTAINERD_CONFIG@@/config.json:/etc/cont-ai-nerd/config.json:ro
+
 # OpenCode global configuration (read-only)
 Volume=@@PRIMARY_HOME@@/.config/opencode:/home/agent/.config/opencode:ro
 

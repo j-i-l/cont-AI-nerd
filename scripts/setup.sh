@@ -5,6 +5,7 @@
 # desired state.  Every step is a no-op when the system already matches.
 #
 # What it does:
+#   0. Checks for config.json (runs configure.sh if missing)
 #   1. Creates the 'agent' system user and 'ai' group
 #   2. Configures project directory permissions (setgid, group-write)
 #   3. Creates the cont-ai-nerd config dir and generates opencode.json policy
@@ -15,44 +16,156 @@
 #   8. Activates all services
 #
 # Usage:
-#   sudo ./setup.sh [primary_user] [project_path ...]
+#   sudo ./setup.sh
 #
-# Arguments:
-#   primary_user   Login name of the human user (default: detected via
-#                  SUDO_USER / logname).
-#   project_path   One or more directories to bind into the container.
-#                  Defaults to /home/<primary_user>/Projects.
+# Configuration:
+#   All settings are read from ~/.config/cont-ai-nerd/config.json
+#   Run ./configure.sh first to create the configuration file, or
+#   setup.sh will invoke it automatically if no config exists.
 #
 # Examples:
-#   sudo ./setup.sh                          # auto-detect user, ~/Projects
-#   sudo ./setup.sh jonas                    # explicit user, ~/Projects
-#   sudo ./setup.sh jonas ~/work ~/oss       # explicit user, two paths
+#   sudo ./configure.sh                       # create config first
+#   sudo ./setup.sh                           # run setup
 # =========================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# ── Configuration ────────────────────────────────────────────────────────
-AGENT_USER="agent"
-AGENT_GROUP="ai"
-INSTALL_DIR="/opt/cont-ai-nerd"
-QUADLET_DIR="/etc/containers/systemd"
-HOST="127.0.0.1"
-PORT=3000
+# Directory layout
+CONTAINER_DIR="${REPO_ROOT}/container"
+SYSTEMD_DIR="${REPO_ROOT}/systemd"
+LIB_DIR="${REPO_ROOT}/lib"
 
-# ── Argument parsing ─────────────────────────────────────────────────────
-PRIMARY_USER="${1:-${SUDO_USER:-$(logname 2>/dev/null || echo "$USER")}}"
-shift 2>/dev/null || true
-
-if [[ $# -gt 0 ]]; then
-  PROJECT_PATHS=("$@")
+# ── Colors (if terminal supports them) ───────────────────────────────────
+if [[ -t 1 ]]; then
+  BOLD='\033[1m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  RED='\033[0;31m'
+  RESET='\033[0m'
 else
-  PROJECT_PATHS=("/home/${PRIMARY_USER}/Projects")
+  BOLD='' GREEN='' YELLOW='' RED='' RESET=''
 fi
 
-PRIMARY_HOME=$(eval echo "~${PRIMARY_USER}")
+# ── Helper functions ─────────────────────────────────────────────────────
+info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
+error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+die()   { error "$@"; exit 1; }
+
+# ── Root check ───────────────────────────────────────────────────────────
+if [[ $EUID -ne 0 ]]; then
+  die "This script must be run as root (sudo ./setup.sh)"
+fi
+
+# ── Dependency check ─────────────────────────────────────────────────────
+if ! command -v jq &>/dev/null; then
+  die "jq is required but not installed. Please install jq first."
+fi
+
+# ── Static configuration ─────────────────────────────────────────────────
+QUADLET_DIR="/etc/containers/systemd"
+
+# ── Determine config file location ───────────────────────────────────────
+# We need to detect the primary user first to find the config file location.
+DETECTED_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "")}"
+
+if [[ -z "$DETECTED_USER" ]]; then
+  die "Could not detect primary user. Please run with sudo or set SUDO_USER."
+fi
+
+DETECTED_HOME=$(eval echo "~${DETECTED_USER}")
+CONFIG_FILE="${DETECTED_HOME}/.config/cont-ai-nerd/config.json"
+
+# ── Configuration file handling ──────────────────────────────────────────
+run_configure() {
+  info "Running configure.sh..."
+  "${SCRIPT_DIR}/configure.sh"
+  
+  # Re-check if config was created
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    die "Configuration was not created. Aborting."
+  fi
+}
+
+if [[ -f "$CONFIG_FILE" ]]; then
+  echo ""
+  echo -e "${BOLD}Found existing configuration:${RESET} ${CONFIG_FILE}"
+  echo ""
+  jq '.' "$CONFIG_FILE" | sed 's/^/  /'
+  echo ""
+  echo -en "Use this configuration? [Y/n/recreate]: "
+  read -r response
+  response="${response:-Y}"
+  
+  case "$response" in
+    [Yy]|"")
+      info "Using existing configuration."
+      ;;
+    [Rr]|recreate)
+      run_configure
+      ;;
+    *)
+      echo "Aborting. Edit the config file manually or run:"
+      echo "  sudo ./configure.sh"
+      exit 0
+      ;;
+  esac
+else
+  warn "Configuration file not found: ${CONFIG_FILE}"
+  echo ""
+  run_configure
+fi
+
+# ── Read configuration ───────────────────────────────────────────────────
+info "Reading configuration from ${CONFIG_FILE}..."
+
+PRIMARY_USER=$(jq -r '.primary_user // empty' "$CONFIG_FILE")
+PRIMARY_HOME=$(jq -r '.primary_home // empty' "$CONFIG_FILE")
+AGENT_USER=$(jq -r '.agent_user // "agent"' "$CONFIG_FILE")
+AGENT_GROUP=$(jq -r '.agent_group // "ai"' "$CONFIG_FILE")
+HOST=$(jq -r '.host // "127.0.0.1"' "$CONFIG_FILE")
+PORT=$(jq -r '.port // 3000' "$CONFIG_FILE")
+INSTALL_DIR=$(jq -r '.install_dir // "/opt/cont-ai-nerd"' "$CONFIG_FILE")
+
+# Read project_paths as a bash array
+readarray -t PROJECT_PATHS < <(jq -r '.project_paths[]' "$CONFIG_FILE")
+
+# ── Validate configuration ───────────────────────────────────────────────
+info "Validating configuration..."
+
+# Required fields
+[[ -z "$PRIMARY_USER" ]] && die "Config error: 'primary_user' is required."
+[[ -z "$PRIMARY_HOME" ]] && die "Config error: 'primary_home' is required."
+[[ ${#PROJECT_PATHS[@]} -eq 0 ]] && die "Config error: 'project_paths' must contain at least one path."
+
+# Validate primary_user exists
+if ! id "$PRIMARY_USER" &>/dev/null; then
+  die "Config error: User '$PRIMARY_USER' does not exist."
+fi
+
+# Validate primary_home exists
+if [[ ! -d "$PRIMARY_HOME" ]]; then
+  die "Config error: Home directory '$PRIMARY_HOME' does not exist."
+fi
+
+# Validate project_paths exist
+for path in "${PROJECT_PATHS[@]}"; do
+  if [[ ! -d "$path" ]]; then
+    die "Config error: Project path '$path' does not exist."
+  fi
+done
+
+# Validate port
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [[ "$PORT" -lt 1 ]] || [[ "$PORT" -gt 65535 ]]; then
+  die "Config error: Invalid port number '$PORT'."
+fi
+
+# ── Derived values ───────────────────────────────────────────────────────
 CONTAINERD_CONFIG="${PRIMARY_HOME}/.config/cont-ai-nerd"
 
+echo ""
 echo "================================================================="
 echo "  cont-ai-nerd — Podman Setup"
 echo "================================================================="
@@ -154,8 +267,8 @@ podman build \
   --build-arg "AGENT_UID=${AGENT_UID}" \
   --build-arg "AGENT_GID=${AI_GID}" \
   -t localhost/cont-ai-nerd:latest \
-  -f "${SCRIPT_DIR}/Containerfile" \
-  "${SCRIPT_DIR}"
+  -f "${CONTAINER_DIR}/Containerfile" \
+  "${CONTAINER_DIR}"
 
 echo "    Image built: localhost/cont-ai-nerd:latest"
 
@@ -164,8 +277,8 @@ echo ""
 echo "==> [6/8] Installing scripts to ${INSTALL_DIR}..."
 
 mkdir -p "${INSTALL_DIR}"
-install -m 755 "${SCRIPT_DIR}/cont-ai-nerd-watcher.sh"  "${INSTALL_DIR}/"
-install -m 755 "${SCRIPT_DIR}/cont-ai-nerd-commit.sh"   "${INSTALL_DIR}/"
+install -m 755 "${LIB_DIR}/cont-ai-nerd-watcher.sh"  "${INSTALL_DIR}/"
+install -m 755 "${LIB_DIR}/cont-ai-nerd-commit.sh"   "${INSTALL_DIR}/"
 
 # ── 7. Render & install systemd units ─────────────────────────────────────
 echo ""
@@ -190,7 +303,7 @@ sed \
   -e "s|@@CONTAINERD_CONFIG@@|${CONTAINERD_CONFIG}|g" \
   -e "s|@@HOST@@|${HOST}|g" \
   -e "s|@@PORT@@|${PORT}|g" \
-  "${SCRIPT_DIR}/cont-ai-nerd.container.in" | \
+  "${SYSTEMD_DIR}/cont-ai-nerd.container.in" | \
   awk -v lines="$VOLUME_LINES" '{gsub(/@@VOLUME_LINES@@/, lines); print}' \
   > "${QUADLET_DIR}/cont-ai-nerd.container"
 
@@ -208,7 +321,7 @@ sed \
   -e "s|@@PRIMARY_USER@@|${PRIMARY_USER}|g" \
   -e "s|@@AGENT_USER@@|${AGENT_USER}|g" \
   -e "s|@@WATCH_DIRS@@|${WATCH_DIRS_ESCAPED}|g" \
-  "${SCRIPT_DIR}/cont-ai-nerd-watcher.service.in" \
+  "${SYSTEMD_DIR}/cont-ai-nerd-watcher.service.in" \
   > /etc/systemd/system/cont-ai-nerd-watcher.service
 
 echo "    Installed cont-ai-nerd-watcher.service"
@@ -216,13 +329,13 @@ echo "    Installed cont-ai-nerd-watcher.service"
 # --- Commit service ---
 sed \
   -e "s|@@INSTALL_DIR@@|${INSTALL_DIR}|g" \
-  "${SCRIPT_DIR}/cont-ai-nerd-commit.service" \
+  "${SYSTEMD_DIR}/cont-ai-nerd-commit.service" \
   > /etc/systemd/system/cont-ai-nerd-commit.service
 
 echo "    Installed cont-ai-nerd-commit.service"
 
 # --- Commit timer (no templating needed) ---
-cp "${SCRIPT_DIR}/cont-ai-nerd-commit.timer" \
+cp "${SYSTEMD_DIR}/cont-ai-nerd-commit.timer" \
    /etc/systemd/system/cont-ai-nerd-commit.timer
 
 echo "    Installed cont-ai-nerd-commit.timer"
@@ -251,7 +364,8 @@ echo ""
 echo "================================================================="
 echo "  cont-ai-nerd setup complete."
 echo ""
-echo "  Container : sudo podman ps | grep cont-ai-nerd"
+echo "  Container : podman ps | grep cont-ai-nerd"
+echo "  TUI       : podman exec -it cont-ai-nerd opencode-tui"
 echo "  Watcher   : systemctl status cont-ai-nerd-watcher"
 echo "  Commits   : systemctl list-timers cont-ai-nerd-commit"
 echo "  Logs      : journalctl -u cont-ai-nerd -f"

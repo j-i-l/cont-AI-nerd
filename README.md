@@ -1,4 +1,4 @@
-# cont-AI-nerd
+# cont[AI]*nerd*
 
 **Sandboxed AI coding agent powered by [OpenCode](https://opencode.ai), running in a rootful Podman container with file system isolation and automatic change tracking.**
 
@@ -67,18 +67,20 @@ cont-AI-nerd creates a sandboxed environment where an AI coding agent (OpenCode)
 │  │  (e.g., alice)   │     │  (systemd)       │     │  (systemd)      │  │
 │  │                  │     │                  │     │                 │  │
 │  │  - Owns files    │     │  - Monitors      │     │  - Runs hourly  │  │
-│  │  - Member of ai  │     │    ~/Projects    │     │  - Commits      │  │
+│  │  - Member of ai  │     │    project dirs  │     │  - Commits      │  │
 │  │    group         │     │  - Fixes perms   │     │    container    │  │
 │  └──────────────────┘     └──────────────────┘     └─────────────────┘  │
 │           │                        │                        │           │
 │           │                        │                        │           │
 │           ▼                        ▼                        ▼           │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                     ~/Projects (setgid ai)                       │   │
+│  │           /home/alice/Projects (example, setgid ai)              │   │
 │  │                                                                  │   │
 │  │   - Group: ai                                                    │   │
-│  │   - Permissions: g+rwxs (directories), g+rw (files)              │   │
-│  │   - Both primary user and agent can read/write                   │   │
+│  │   - Directories: g+rxs (read/traverse), add g+w for write        │   │
+│  │   - Files: g+r (read), add g+w for write                         │   │
+│  │   - Sensitive files (.env, secrets/): mode 700 (agent blocked)   │   │
+│  │   - .git/: read-only for ai group                                │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                    │                                    │
 │                                    │ bind mount                         │
@@ -99,7 +101,7 @@ cont-AI-nerd creates a sandboxed environment where an AI coding agent (OpenCode)
 │  │                              ▲                                   │   │
 │  │                              │                                   │   │
 │  │  ┌────────────────────────────────────────────────────────────┐  │   │
-│  │  │                    opencode-tui                            │  │   │
+│  │  │              opencode-tui (optional attach mechanism)      │  │   │
 │  │  │                                                            │  │   │
 │  │  │  - Wrapper script at /usr/local/bin/opencode-tui           │  │   │
 │  │  │  - Attaches TUI to running server                          │  │   │
@@ -107,8 +109,8 @@ cont-AI-nerd creates a sandboxed environment where an AI coding agent (OpenCode)
 │  │  │                                                            │  │   │
 │  │  └────────────────────────────────────────────────────────────┘  │   │
 │  │                                                                  │   │
-│  │  Mounts:                                                         │   │
-│  │    - ~/Projects → ~/Projects (rw)                                │   │
+│  │  Mounts (paths are examples, configured via config.json):        │   │
+│  │    - /home/alice/Projects → /home/alice/Projects (rw)            │   │
 │  │    - ~/.config/opencode → /home/agent/.config/opencode (ro)      │   │
 │  │    - ~/.local/share/opencode → /home/agent/.local/share (ro)     │   │
 │  │    - ~/.config/cont-ai-nerd/config.json → /etc/cont-ai-nerd/ (ro)│   │
@@ -117,6 +119,9 @@ cont-AI-nerd creates a sandboxed environment where an AI coding agent (OpenCode)
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Note:** In the diagram above, `~` refers to the primary user's home directory
+(e.g., `/home/alice` for user `alice`).
 
 ---
 
@@ -142,13 +147,8 @@ Before installing cont-AI-nerd, ensure your system meets the following requireme
 
 ### OpenCode Requirements
 
-You'll need API credentials for at least one LLM provider. Supported providers include:
-
-- OpenCode Zen (recommended for beginners)
-- Anthropic (Claude)
-- OpenAI
-- Google (Gemini)
-- And [many more](https://opencode.ai/docs/providers)
+You'll need API credentials for at least one LLM provider.
+See the [OpenCode documentation](https://opencode.ai/docs/providers) for supported providers and authentication setup.
 
 ### Installing Prerequisites
 
@@ -176,7 +176,7 @@ sudo pacman -S podman jq inotify-tools
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/cont-AI-nerd.git
+git clone https://github.com/j-i-l/cont-AI-nerd.git
 cd cont-AI-nerd
 
 # Configure (interactive)
@@ -192,7 +192,7 @@ podman exec -it cont-ai-nerd opencode-tui
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/cont-AI-nerd.git
+git clone https://github.com/j-i-l/cont-AI-nerd.git
 cd cont-AI-nerd
 ```
 
@@ -431,31 +431,76 @@ cont-AI-nerd uses rootful Podman to create a container that:
 
 ### File Permissions Model
 
-The permissions model ensures both the primary user and the container agent can read/write project files:
+The permissions model allows fine-grained control over what the agent can access:
 
 ```
-Primary User (alice)          Agent User (agent)
-     │                              │
-     │   member of                  │   primary group
-     ▼                              ▼
-┌─────────────────────────────────────┐
-│            ai group                 │
-│                                     │
-│  Project directories:               │
-│    - Owner: primary user            │
-│    - Group: ai                      │
-│    - Mode: g+rwxs (setgid)          │
-│                                     │
-│  New files automatically inherit    │
-│  the ai group via setgid            │
-└─────────────────────────────────────┘
+Primary User (e.g., alice)        Agent User (agent)
+     │                                  │
+     │   member of                      │   primary group
+     ▼                                  ▼
+┌─────────────────────────────────────────┐
+│              ai group                   │
+│                                         │
+│  Permission Levels:                     │
+│                                         │
+│  ┌─────────────────────────────────┐    │
+│  │  g+r   → agent can READ         │    │
+│  │  g+rw  → agent can READ + WRITE │    │
+│  │  700   → agent BLOCKED          │    │
+│  └─────────────────────────────────┘    │
+│                                         │
+│  Directory requirements:                │
+│    - g+rx  for read/traverse access     │
+│    - g+rwx for read/write access        │
+│    - s (setgid) for group inheritance   │
+│                                         │
+└─────────────────────────────────────────┘
 ```
+
+**Permission categories:**
+
+| Category | Mode | Agent Access | Examples |
+|----------|------|--------------|----------|
+| **Blocked** | `700` | None | `.env`, `secrets/`, `*.key` |
+| **Read-only** | `g+r` (files), `g+rx` (dirs) | Read | `.git/`, config files |
+| **Read-write** | `g+rw` (files), `g+rwx` (dirs) | Full | Source code, docs |
 
 **Key aspects:**
 
 1. **Setgid on directories** — New files/directories inherit the `ai` group
-2. **Group write permissions** — Both users can read/write through group membership
-3. **File watcher** — Fixes permissions on files created outside the container
+2. **Granular access** — Set permissions per-file based on sensitivity
+3. **Sensitive files blocked** — `.env`, secrets, keys are mode `700` (owner only)
+4. **`.git/` read-only** — Agent can read history but not modify it
+5. **File watcher** — Fixes permissions on files created by the agent
+
+### Preparing Project Permissions
+
+Before running the agent on your projects, use `prepare-permissions.sh` to set secure permissions:
+
+```bash
+# Preview changes (dry-run)
+sudo ./scripts/prepare-permissions.sh --dry-run ~/Projects
+
+# Apply permissions
+sudo ./scripts/prepare-permissions.sh ~/Projects
+
+# Or use paths from config.json
+sudo ./scripts/prepare-permissions.sh --from-config
+```
+
+The script applies the following rules:
+
+| Pattern | Mode | Result |
+|---------|------|--------|
+| `.env`, `.env.*` | `700` | Blocked |
+| `secrets/`, `.secrets/`, `vault/` | `700` | Blocked |
+| `*.key`, `*.pem`, `id_rsa`, etc. | `700` | Blocked |
+| `.git/` | `g=rX` | Read-only |
+| Directories | `g+rxs` | Read + setgid |
+| Regular files | `g+rw` | Read-write |
+| Files with existing `g < 6` | preserved | Keeps restriction |
+
+**Important:** The script preserves existing restrictive permissions. If a file already has more restrictive group permissions (e.g., `g=r` or no group access), those are kept.
 
 ### Systemd Services
 
@@ -564,12 +609,16 @@ journalctl -u cont-ai-nerd -n 50
 ls -la ~/Projects/
 ```
 
-**Fix permissions manually:**
+**Use the permission preparation script:**
 ```bash
-sudo chgrp -R ai ~/Projects
-sudo find ~/Projects -type d -exec chmod g+rwxs {} +
-sudo find ~/Projects -type f -exec chmod g+rw {} +
+# Preview what will change
+sudo ./scripts/prepare-permissions.sh --dry-run ~/Projects
+
+# Apply secure permissions
+sudo ./scripts/prepare-permissions.sh ~/Projects
 ```
+
+This script sets appropriate permissions while protecting sensitive files (`.env`, secrets, keys) and keeping `.git/` read-only.
 
 **Check if user is in the ai group:**
 ```bash
@@ -686,7 +735,7 @@ Contributions are welcome! Please follow these guidelines:
 ### Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/cont-AI-nerd.git`
+2. Clone your fork: `git clone https://github.com/j-i-l/cont-AI-nerd.git`
 3. Create a branch: `git checkout -b feature/your-feature`
 
 ### Code Style

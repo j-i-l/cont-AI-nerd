@@ -1,6 +1,6 @@
 { lib, stdenvNoCC, makeWrapper
 , bash, coreutils, findutils, gawk, gnugrep, gnused
-, inotify-tools, jq, podman, shadow
+, inotify-tools, jq, podman, shadow, getent
 }:
 
 # Packages the helper scripts from lib/ and scripts/ with wrapped PATH so
@@ -15,12 +15,13 @@ let
                   # sort, tail, cut, date, basename, logname
     findutils     # find, xargs
     gawk          # awk
+    getent        # getent (NSS lookups)
     gnugrep       # grep
     gnused        # sed
     inotify-tools # inotifywait
     jq            # jq
     podman        # podman
-    shadow        # groupadd, useradd, usermod, getent, nologin
+    shadow        # groupadd, useradd, usermod, nologin
   ];
 in
 stdenvNoCC.mkDerivation {

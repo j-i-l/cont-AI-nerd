@@ -288,7 +288,8 @@ echo ""
 echo "==> [3/8] Generating cont-ai-nerd config..."
 
 mkdir -p "${CONTAINERD_CONFIG}"
-chown "${PRIMARY_USER}:${PRIMARY_USER}" "${CONTAINERD_CONFIG}"
+chown "${PRIMARY_USER}:${AGENT_GROUP}" "${CONTAINERD_CONFIG}"
+chmod 750 "${CONTAINERD_CONFIG}"
 
 # Generate external_directory policy — allows the agent to access exactly
 # the paths that are bind-mounted into the container (using container-side paths).
@@ -307,8 +308,8 @@ POLICY_FILE="${CONTAINERD_CONFIG}/opencode.json"
   echo '  }'
   echo '}'
 } > "${POLICY_FILE}"
-chown "${PRIMARY_USER}:${PRIMARY_USER}" "${POLICY_FILE}"
-chmod 644 "${POLICY_FILE}"
+chown "${PRIMARY_USER}:${AGENT_GROUP}" "${POLICY_FILE}"
+chmod 640 "${POLICY_FILE}"
 echo "    Generated ${POLICY_FILE}"
 
 # ── 4. Ensure host OpenCode config/data directories exist ─────────────────
@@ -321,21 +322,22 @@ for dir in \
   "${PRIMARY_HOME}/.local/share/opencode/log"; do
   if [[ ! -d "$dir" ]]; then
     mkdir -p "$dir"
-    chown "${PRIMARY_USER}:${PRIMARY_USER}" "$dir"
     echo "    Created ${dir}"
   else
     echo "    ${dir} exists."
   fi
+  chown "${PRIMARY_USER}:${AGENT_GROUP}" "$dir"
+  chmod 770 "$dir"
 done
 
 # Ensure auth.json exists (required for bind mount, even if empty)
 AUTH_FILE="${PRIMARY_HOME}/.local/share/opencode/auth.json"
 if [[ ! -f "$AUTH_FILE" ]]; then
   echo '{}' > "$AUTH_FILE"
-  chown "${PRIMARY_USER}:${PRIMARY_USER}" "$AUTH_FILE"
-  chmod 600 "$AUTH_FILE"
   echo "    Created ${AUTH_FILE} (placeholder)"
 fi
+chown "${PRIMARY_USER}:${AGENT_GROUP}" "$AUTH_FILE"
+chmod 640 "$AUTH_FILE"
 
 # ── 5. Build the container image ─────────────────────────────────────────
 echo ""

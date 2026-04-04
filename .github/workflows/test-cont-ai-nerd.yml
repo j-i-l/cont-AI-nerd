@@ -273,6 +273,41 @@ jobs:
 
           echo "PASS: systemd services"
 
+      # ── 6b. Debug container startup ─────────────────────────
+      - name: "Debug: container startup"
+        run: |
+          set -euo pipefail
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+          CONFIG_DIR="$HOME/.config/cont-ai-nerd"
+
+          echo "--- Testing container startup manually (foreground, no --rm) ---"
+          echo "This helps capture the actual error if the container crashes."
+          echo ""
+
+          # Run the container in foreground briefly to capture any startup errors
+          # Use timeout to prevent hanging forever
+          timeout 10 sudo podman run \
+            --name=cont-ai-nerd-debug \
+            --user=${AGENT_UID}:${AI_GID} \
+            --network=host \
+            -v "$HOME/Projects:/workspace/Projects:rw" \
+            -v "${CONFIG_DIR}/opencode.json:/etc/cont-ai-nerd/opencode.json:ro" \
+            -v "${CONFIG_DIR}/config.json:/etc/cont-ai-nerd/config.json:ro" \
+            -v "$HOME/.config/opencode:/home/agent/.config/opencode:ro" \
+            -v "$HOME/.local/share/opencode:/home/agent/.local/share/opencode:ro" \
+            --env OPENCODE_CONFIG=/etc/cont-ai-nerd/opencode.json \
+            localhost/cont-ai-nerd:latest \
+            serve --hostname 127.0.0.1 --port 3000 2>&1 || true
+
+          echo ""
+          echo "--- Container logs (if any) ---"
+          sudo podman logs cont-ai-nerd-debug 2>&1 || true
+
+          echo ""
+          echo "--- Cleaning up debug container ---"
+          sudo podman rm -f cont-ai-nerd-debug 2>/dev/null || true
+
       # ── 7. Test health check from container ────────────────
       - name: "Test: health check from container"
         run: |

@@ -383,8 +383,8 @@ VOLUME_LINES="${VOLUME_LINES%$'\n'}"
 
 # sed handles scalar placeholders; awk handles the multi-line @@VOLUME_LINES@@.
 sed \
-  -e "s|@@AGENT_UID@@|${AGENT_UID}|g" \
-  -e "s|@@AGENT_GID@@|${AI_GID}|g" \
+  -e "s|@@AGENT_USER@@|${AGENT_USER}|g" \
+  -e "s|@@AGENT_GROUP@@|${AGENT_GROUP}|g" \
   -e "s|@@PRIMARY_HOME@@|${PRIMARY_HOME}|g" \
   -e "s|@@CONTAINERD_CONFIG@@|${CONTAINERD_CONFIG}|g" \
   -e "s|@@HOST@@|${HOST}|g" \

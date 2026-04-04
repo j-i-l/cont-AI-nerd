@@ -91,10 +91,9 @@ let
     ContainerName=cont-ai-nerd
     Image=localhost/cont-ai-nerd:latest
 
-    # UID/GID are resolved at activation time and written into this file.
-    # The placeholders below are replaced by the activation script.
-    User=@@AGENT_UID@@
-    Group=@@AGENT_GID@@
+    # Run container as the agent user/group (resolved by Podman at runtime)
+    User=${cfg.agent.user}
+    Group=${cfg.agent.group}
 
     # ---------- Bind mounts ----------
     # Project directories (read-write, mounted under /workspace)
@@ -319,23 +318,6 @@ in {
         deps = [ "users" "groups" ];
       };
 
-      # Resolve UID/GID and patch the Quadlet file.
-      cont-ai-nerd-quadlet = {
-        text = ''
-          AGENT_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.agent.user} 2>/dev/null || echo 1001)
-          AGENT_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.agent.user} 2>/dev/null || echo 1001)
-
-          QUADLET="/etc/containers/systemd/cont-ai-nerd.container"
-          if [ -f "$QUADLET" ]; then
-            ${pkgs.gnused}/bin/sed -i \
-              -e "s/@@AGENT_UID@@/$AGENT_UID/g" \
-              -e "s/@@AGENT_GID@@/$AGENT_GID/g" \
-              "$QUADLET"
-          fi
-        '';
-        deps = [ "cont-ai-nerd-dirs" "users" "groups" ];
-      };
-
       # Build / rebuild the container image when needed.
       cont-ai-nerd-image = {
         text = ''
@@ -370,7 +352,7 @@ in {
             echo "cont-ai-nerd: container image up to date."
           fi
         '';
-        deps = [ "cont-ai-nerd-quadlet" ];
+        deps = [ "cont-ai-nerd-dirs" "users" "groups" ];
       };
 
       # Set up project directory permissions.

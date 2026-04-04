@@ -3,8 +3,8 @@
 # /etc/containers/systemd/cont-ai-nerd.container
 #
 # Placeholders (sed-replaced by setup.sh):
-#   @@AGENT_UID@@        — numeric UID of the host 'agent' user
-#   @@AGENT_GID@@        — numeric GID of the host 'ai' group
+#   @@AGENT_USER@@       — username of the host 'agent' user
+#   @@AGENT_GROUP@@      — group name of the host 'ai' group
 #   @@VOLUME_LINES@@     — one Volume= directive per project path
 #   @@PRIMARY_HOME@@     — absolute path to the primary user's home directory
 #   @@CONTAINERD_CONFIG@@— path to ~/.config/cont-ai-nerd on the host
@@ -19,10 +19,9 @@ After=network-online.target
 ContainerName=cont-ai-nerd
 Image=localhost/cont-ai-nerd:latest
 
-# Run as the real host 'agent' user / 'ai' group.
-# Because this is rootful podman, these map 1:1 to host UIDs.
-User=@@AGENT_UID@@
-Group=@@AGENT_GID@@
+# Run as the host 'agent' user / 'ai' group (resolved by Podman at runtime).
+User=@@AGENT_USER@@
+Group=@@AGENT_GROUP@@
 
 # ---------- Bind mounts ----------
 

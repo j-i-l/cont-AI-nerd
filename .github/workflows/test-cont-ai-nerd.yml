@@ -71,10 +71,11 @@ jobs:
           mkdir -p "$HOME/Projects"
 
           echo "--- Running configure.sh with scripted input ---"
-          # Inputs: primary_user, home, project_paths, agent_user, agent_group, host, port, install_dir
+          # Inputs: primary_user, home, project_paths, agent_user, agent_group, host, port, install_dir, extra_packages
           # All use defaults except we confirm the user
           printf '%s\n' \
             "$USER" \
+            "" \
             "" \
             "" \
             "" \
@@ -95,6 +96,7 @@ jobs:
           echo "--- Checking config content ---"
           jq -e '.primary_user' "$CONFIG" > /dev/null
           jq -e '.project_paths | length > 0' "$CONFIG" > /dev/null
+          jq -e '.extra_packages | arrays' "$CONFIG" > /dev/null
 
           echo "--- Config contents ---"
           cat "$CONFIG"
@@ -213,6 +215,39 @@ jobs:
             localhost/cont-ai-nerd:latest opencode-tui
 
           echo "PASS: container image"
+
+      # ── 4b. Verify agent bash tool ─────────────────────────
+      - name: "Test: agent can use bash"
+        run: |
+          set -euo pipefail
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          echo "--- Checking /usr/bin/bash exists in container ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            --entrypoint test \
+            localhost/cont-ai-nerd:latest -x /usr/bin/bash
+          echo "PASS: /usr/bin/bash is executable"
+
+          echo "--- Checking agent can run bash -c 'whoami' ---"
+          WHOAMI=$(sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            --entrypoint bash \
+            localhost/cont-ai-nerd:latest -c 'whoami')
+          [[ "$WHOAMI" == "agent" ]] || \
+            { echo "FAIL: expected 'agent', got '$WHOAMI'"; exit 1; }
+          echo "PASS: whoami → $WHOAMI"
+
+          echo "--- Checking agent can run bash -c 'ls /workspace' ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            --entrypoint bash \
+            localhost/cont-ai-nerd:latest -c 'ls /workspace'
+          echo "PASS: ls /workspace succeeded"
+
+          echo ""
+          echo "PASS: agent can use bash"
 
       # ── 5. Verify opencode-tui wrapper ─────────────────────
       - name: "Test: opencode-tui wrapper"

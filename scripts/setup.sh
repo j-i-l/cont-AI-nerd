@@ -186,6 +186,9 @@ INSTALL_DIR=$(jq -r '.install_dir // "/opt/cont-ai-nerd"' "$CONFIG_FILE")
 # Read project_paths as a bash array
 readarray -t PROJECT_PATHS < <(jq -r '.project_paths[]' "$CONFIG_FILE")
 
+# Read optional extra_packages as a space-separated string for the build arg
+EXTRA_PACKAGES=$(jq -r '(.extra_packages // []) | join(" ")' "$CONFIG_FILE")
+
 # ── Validate configuration ───────────────────────────────────────────────
 info "Validating configuration..."
 
@@ -347,6 +350,7 @@ echo "==> [5/8] Building container image..."
 podman build \
   --build-arg "AGENT_UID=${AGENT_UID}" \
   --build-arg "AGENT_GID=${AI_GID}" \
+  --build-arg "EXTRA_PACKAGES=${EXTRA_PACKAGES}" \
   -t localhost/cont-ai-nerd:latest \
   -f "${CONTAINER_DIR}/Containerfile" \
   "${CONTAINER_DIR}"

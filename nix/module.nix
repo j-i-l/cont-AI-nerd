@@ -58,14 +58,15 @@ let
 
   # Generate config.json from module options
   configJson = pkgs.writeText "cont-ai-nerd-config.json" (builtins.toJSON {
-    primary_user  = cfg.primaryUser;
-    primary_home  = cfg.primaryHome;
-    project_paths = cfg.projectPaths;
-    agent_user    = cfg.agent.user;
-    agent_group   = cfg.agent.group;
-    host          = cfg.server.host;
-    port          = cfg.server.port;
-    install_dir   = "${scripts}/lib/cont-ai-nerd";
+    primary_user    = cfg.primaryUser;
+    primary_home    = cfg.primaryHome;
+    project_paths   = cfg.projectPaths;
+    agent_user      = cfg.agent.user;
+    agent_group     = cfg.agent.group;
+    host            = cfg.server.host;
+    port            = cfg.server.port;
+    install_dir     = "${scripts}/lib/cont-ai-nerd";
+    extra_packages  = cfg.container.extraPackages;
   });
 
   # Generate opencode.json policy file using container-side paths
@@ -237,6 +238,17 @@ in {
         default     = "latest";
         description = "OpenCode version to install in the container image.";
       };
+
+      extraPackages = lib.mkOption {
+        type        = lib.types.listOf lib.types.str;
+        default     = [];
+        description = ''
+          Additional apt packages to install in the container image.
+          These are passed to <literal>apt-get install</literal> at image build time.
+          Example: <literal>[ "ripgrep" "fd-find" "python3" ]</literal>
+        '';
+        example     = [ "ripgrep" "fd-find" "python3" ];
+      };
     };
   };
 
@@ -325,7 +337,9 @@ in {
           HASH_FILE="/var/lib/cont-ai-nerd/containerfile.sha256"
           mkdir -p /var/lib/cont-ai-nerd
 
-          CURRENT_HASH=$(${pkgs.coreutils}/bin/sha256sum "$CONTAINER_DIR/Containerfile" | cut -d' ' -f1)
+          # Include the Containerfile content and the build args in the hash so
+          # that changing extra_packages or opencode_version triggers a rebuild.
+          CURRENT_HASH=$({ ${pkgs.coreutils}/bin/sha256sum "$CONTAINER_DIR/Containerfile"; printf '%s\n' "OPENCODE_VERSION=${cfg.container.opencodeVersion}" "EXTRA_PACKAGES=${lib.concatStringsSep " " cfg.container.extraPackages}"; } | ${pkgs.coreutils}/bin/sha256sum | cut -d' ' -f1)
           STORED_HASH=""
           if [ -f "$HASH_FILE" ]; then
             STORED_HASH=$(cat "$HASH_FILE")
@@ -342,6 +356,7 @@ in {
               --build-arg "AGENT_UID=$AGENT_UID" \
               --build-arg "AGENT_GID=$AGENT_GID" \
               --build-arg "OPENCODE_VERSION=${cfg.container.opencodeVersion}" \
+              --build-arg "EXTRA_PACKAGES=${lib.concatStringsSep " " cfg.container.extraPackages}" \
               -t localhost/cont-ai-nerd:latest \
               -f "$CONTAINER_DIR/Containerfile" \
               "$CONTAINER_DIR"

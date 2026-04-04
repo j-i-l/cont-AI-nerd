@@ -233,6 +233,12 @@ if [[ -z "$INSTALL_DIR" ]]; then
   INSTALL_DIR="/opt/cont-ai-nerd"
 fi
 
+# ── Extra packages ───────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}Extra packages${RESET} (space-separated apt package names to install in the"
+echo "container, e.g. 'ripgrep fd-find python3'). Leave empty for none."
+prompt "Extra packages" "" EXTRA_PACKAGES_INPUT
+
 # ── Generate config file ─────────────────────────────────────────────────
 CONFIG_DIR="${PRIMARY_HOME}/.config/cont-ai-nerd"
 CONFIG_FILE="${CONFIG_DIR}/config.json"
@@ -244,6 +250,13 @@ chmod 700 "$CONFIG_DIR"
 # Build JSON array for project_paths
 PROJECT_PATHS_JSON=$(printf '%s\n' "${PROJECT_PATHS[@]}" | jq -R . | jq -s .)
 
+# Build JSON array for extra_packages (split on whitespace)
+EXTRA_PACKAGES_JSON="[]"
+if [[ -n "$EXTRA_PACKAGES_INPUT" ]]; then
+  read -r -a EXTRA_PACKAGES_ARRAY <<< "$EXTRA_PACKAGES_INPUT"
+  EXTRA_PACKAGES_JSON=$(printf '%s\n' "${EXTRA_PACKAGES_ARRAY[@]}" | jq -R . | jq -s .)
+fi
+
 # Generate the config file
 cat > "$CONFIG_FILE" <<EOF
 {
@@ -254,7 +267,8 @@ cat > "$CONFIG_FILE" <<EOF
   "agent_group": "${AGENT_GROUP}",
   "host": "${HOST}",
   "port": ${PORT},
-  "install_dir": "${INSTALL_DIR}"
+  "install_dir": "${INSTALL_DIR}",
+  "extra_packages": ${EXTRA_PACKAGES_JSON}
 }
 EOF
 

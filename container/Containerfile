@@ -6,14 +6,26 @@ ARG AGENT_UID=1001
 ARG AGENT_GID=1001
 
 # Minimal runtime dependencies.
+# bash and coreutils are installed explicitly so the AI agent's bash tool
+# can spawn /usr/bin/bash reliably.
 # inotify-tools is included for potential in-container watchers.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash \
       ca-certificates \
+      coreutils \
       curl \
       git \
       inotify-tools \
       jq \
     && rm -rf /var/lib/apt/lists/*
+
+# Extra packages requested by the operator (space-separated apt package names).
+# Example: --build-arg EXTRA_PACKAGES="ripgrep fd-find python3"
+ARG EXTRA_PACKAGES=""
+RUN if [ -n "$EXTRA_PACKAGES" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends $EXTRA_PACKAGES \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Download the opencode binary from GitHub releases.
 # Override OPENCODE_VERSION at build time to pin a specific release.

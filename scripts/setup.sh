@@ -296,6 +296,7 @@ chmod 750 "${CONTAINERD_CONFIG}"
 POLICY_FILE="${CONTAINERD_CONFIG}/opencode.json"
 {
   echo '{'
+  # shellcheck disable=SC2016 # $schema is a literal JSON key, not a variable
   echo '  "$schema": "https://opencode.ai/config.json",'
   echo '  "permission": {'
   echo '    "external_directory": {'

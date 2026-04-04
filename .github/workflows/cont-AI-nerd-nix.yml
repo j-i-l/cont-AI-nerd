@@ -1229,7 +1229,7 @@ jobs:
           # The script should detect the container is running and try to connect
           # We expect it to fail because there's no actual OpenCode server, but
           # it should get past config reading.
-          OUTPUT=$(sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+          OUTPUT=$(timeout 10 sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
 
           # Should NOT fail with config errors
           if echo "$OUTPUT" | grep -qi "config.*not found"; then

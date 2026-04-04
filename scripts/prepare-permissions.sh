@@ -319,9 +319,9 @@ process_directory() {
     if is_sensitive_dir "$dir"; then
       debug "    Locking sensitive dir: $dir"
       run_cmd chmod 700 "$dir"
-      ((STATS_SENSITIVE_LOCKED++)) || true
+      STATS_SENSITIVE_LOCKED=$((STATS_SENSITIVE_LOCKED + 1))
     fi
-  done < <(find "$root" -type d -print0 2>/dev/null)
+  done < <(find "$root" -type d -print0 2>/dev/null || true)
   
   # Phase 2: Lock sensitive files
   info "  Phase 2: Locking sensitive files..."
@@ -329,9 +329,9 @@ process_directory() {
     if is_sensitive_file "$file"; then
       debug "    Locking sensitive file: $file"
       run_cmd chmod 700 "$file"
-      ((STATS_SENSITIVE_LOCKED++)) || true
+      STATS_SENSITIVE_LOCKED=$((STATS_SENSITIVE_LOCKED + 1))
     fi
-  done < <(find "$root" -type f -print0 2>/dev/null)
+  done < <(find "$root" -type f -print0 2>/dev/null || true)
   
   # Phase 3: Set .git/ directories to read-only for group
   info "  Phase 3: Setting .git/ to read-only..."
@@ -341,8 +341,8 @@ process_directory() {
     run_cmd chmod -R g=rX "$gitdir"
     # Also ensure no group write
     run_cmd chmod -R g-w "$gitdir"
-    ((STATS_GIT_READONLY++)) || true
-  done < <(find "$root" -type d -name ".git" -print0 2>/dev/null)
+    STATS_GIT_READONLY=$((STATS_GIT_READONLY + 1))
+  done < <(find "$root" -type d -name ".git" -print0 2>/dev/null || true)
   
   # Phase 4: Set directories to g+rxs (excluding .git and sensitive)
   info "  Phase 4: Setting directory permissions (g+rxs)..."
@@ -370,8 +370,8 @@ process_directory() {
     debug "    Setting dir g+rxs: $dir"
     run_cmd chgrp "$AGENT_GROUP" "$dir"
     run_cmd chmod g+rxs "$dir"
-    ((STATS_DIRS_SETGID++)) || true
-  done < <(find "$root" -type d -print0 2>/dev/null)
+    STATS_DIRS_SETGID=$((STATS_DIRS_SETGID + 1))
+  done < <(find "$root" -type d -print0 2>/dev/null || true)
   
   # Phase 5: Set file permissions (g+rw unless more restrictive)
   info "  Phase 5: Setting file permissions..."
@@ -406,14 +406,14 @@ process_directory() {
       # Has some group perms but less than rw — check if intentional
       # If it's 4 (r--) or 5 (r-x), preserve it
       debug "    Preserving restrictive perms on: $file (g=$current_group_perm)"
-      ((STATS_PRESERVED++)) || true
+      STATS_PRESERVED=$((STATS_PRESERVED + 1))
     else
       debug "    Setting file g+rw: $file"
       run_cmd chgrp "$AGENT_GROUP" "$file"
       run_cmd chmod g+rw "$file"
-      ((STATS_FILES_GROUPRW++)) || true
+      STATS_FILES_GROUPRW=$((STATS_FILES_GROUPRW + 1))
     fi
-  done < <(find "$root" -type f -print0 2>/dev/null)
+  done < <(find "$root" -type f -print0 2>/dev/null || true)
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────

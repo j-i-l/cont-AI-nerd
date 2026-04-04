@@ -44,6 +44,10 @@ RUN mkdir -p /etc/cont-ai-nerd && chown agent:ai /etc/cont-ai-nerd
 # OpenCode state directory (needed for runtime state like sessions).
 RUN mkdir -p /home/agent/.local/state && chown agent:ai /home/agent/.local/state
 
+# OpenCode data directories (logs, etc.) — auth.json is bind-mounted read-only.
+RUN mkdir -p /home/agent/.local/share/opencode/log && \
+    chown -R agent:ai /home/agent/.local/share/opencode
+
 # TUI attach wrapper script
 COPY opencode-tui.sh /usr/local/bin/opencode-tui
 RUN chmod 755 /usr/local/bin/opencode-tui

@@ -109,8 +109,8 @@ let
     # OpenCode global configuration (read-only)
     Volume=${cfg.primaryHome}/.config/opencode:/home/agent/.config/opencode:ro
 
-    # OpenCode data / auth credentials (read-only)
-    Volume=${cfg.primaryHome}/.local/share/opencode:/home/agent/.local/share/opencode:ro
+    # OpenCode auth credentials only (read-only) — the container creates its own log dir
+    Volume=${cfg.primaryHome}/.local/share/opencode/auth.json:/home/agent/.local/share/opencode/auth.json:ro
 
     # ---------- Environment ----------
     Environment=OPENCODE_CONFIG=/etc/cont-ai-nerd/opencode.json
@@ -302,6 +302,14 @@ in {
             mkdir -p "$dir"
             chown ${cfg.primaryUser}:${cfg.primaryUser} "$dir"
           done
+
+          # Ensure auth.json exists (required for bind mount, even if empty)
+          AUTH_FILE="${cfg.primaryHome}/.local/share/opencode/auth.json"
+          if [ ! -f "$AUTH_FILE" ]; then
+            echo '{}' > "$AUTH_FILE"
+            chown ${cfg.primaryUser}:${cfg.primaryUser} "$AUTH_FILE"
+            chmod 600 "$AUTH_FILE"
+          fi
         '';
         deps = [];
       };

@@ -295,7 +295,7 @@ jobs:
             -v "${CONFIG_DIR}/opencode.json:/etc/cont-ai-nerd/opencode.json:ro" \
             -v "${CONFIG_DIR}/config.json:/etc/cont-ai-nerd/config.json:ro" \
             -v "$HOME/.config/opencode:/home/agent/.config/opencode:ro" \
-            -v "$HOME/.local/share/opencode:/home/agent/.local/share/opencode:ro" \
+            -v "$HOME/.local/share/opencode/auth.json:/home/agent/.local/share/opencode/auth.json:ro" \
             --env OPENCODE_CONFIG=/etc/cont-ai-nerd/opencode.json \
             localhost/cont-ai-nerd:latest \
             serve --hostname 127.0.0.1 --port 3000 2>&1 || true
@@ -314,13 +314,26 @@ jobs:
           set -euo pipefail
 
           echo "--- Waiting for container to start (up to 30s) ---"
+          CONTAINER_RUNNING=false
           for i in $(seq 1 30); do
-            if sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q cont-ai-nerd; then
+            if sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
               echo "    Container running after ${i}s"
+              CONTAINER_RUNNING=true
               break
             fi
             sleep 1
           done
+
+          if [[ "$CONTAINER_RUNNING" != "true" ]]; then
+            echo "FAIL: Container did not start within 30s"
+            echo ""
+            echo "--- systemctl status ---"
+            systemctl status cont-ai-nerd.service --no-pager 2>&1 || true
+            echo ""
+            echo "--- journalctl ---"
+            journalctl -u cont-ai-nerd --no-pager -n 50 2>&1 || true
+            exit 1
+          fi
 
           echo "--- Checking container health status ---"
           # The container should have a healthcheck defined

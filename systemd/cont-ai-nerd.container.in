@@ -38,8 +38,8 @@ Volume=@@CONTAINERD_CONFIG@@/config.json:/etc/cont-ai-nerd/config.json:ro
 # OpenCode global configuration (read-only)
 Volume=@@PRIMARY_HOME@@/.config/opencode:/home/agent/.config/opencode:ro
 
-# OpenCode data / auth credentials (read-only)
-Volume=@@PRIMARY_HOME@@/.local/share/opencode:/home/agent/.local/share/opencode:ro
+# OpenCode auth credentials only (read-only) — the container creates its own log dir
+Volume=@@PRIMARY_HOME@@/.local/share/opencode/auth.json:/home/agent/.local/share/opencode/auth.json:ro
 
 # ---------- Environment ----------
 # Point opencode at the cont-ai-nerd policy file (higher precedence than global config).

@@ -327,6 +327,15 @@ for dir in \
   fi
 done
 
+# Ensure auth.json exists (required for bind mount, even if empty)
+AUTH_FILE="${PRIMARY_HOME}/.local/share/opencode/auth.json"
+if [[ ! -f "$AUTH_FILE" ]]; then
+  echo '{}' > "$AUTH_FILE"
+  chown "${PRIMARY_USER}:${PRIMARY_USER}" "$AUTH_FILE"
+  chmod 600 "$AUTH_FILE"
+  echo "    Created ${AUTH_FILE} (placeholder)"
+fi
+
 # ── 5. Build the container image ─────────────────────────────────────────
 echo ""
 echo "==> [5/8] Building container image..."

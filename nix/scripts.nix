@@ -7,14 +7,7 @@
 # every external command they invoke is resolved from the Nix store rather
 # than relying on ambient $PATH.
 
-stdenvNoCC.mkDerivation {
-  pname = "cont-ai-nerd-scripts";
-  version = "0.1.0";
-
-  src = ../.;
-
-  nativeBuildInputs = [ makeWrapper ];
-
+let
   # Runtime dependencies injected into each wrapper's PATH.
   runtimeDeps = [
     bash
@@ -29,6 +22,16 @@ stdenvNoCC.mkDerivation {
     podman        # podman
     shadow        # groupadd, useradd, usermod, getent, nologin
   ];
+in
+stdenvNoCC.mkDerivation {
+  pname = "cont-ai-nerd-scripts";
+  version = "0.1.0";
+
+  src = ../.;
+
+  nativeBuildInputs = [ makeWrapper ];
+
+  inherit runtimeDeps;  # expose as derivation attribute for introspection
 
   dontBuild = true;
 

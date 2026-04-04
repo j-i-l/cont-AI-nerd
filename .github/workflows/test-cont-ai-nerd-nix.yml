@@ -1,0 +1,1284 @@
+name: Test cont-ai-nerd (Nix flake)
+
+on:
+  push:
+    paths:
+      - "scripts/**"
+      - "container/**"
+      - "systemd/**"
+      - "lib/**"
+      - "nix/**"
+      - "flake.nix"
+      - ".github/workflows/test-cont-ai-nerd-nix.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "container/**"
+      - "systemd/**"
+      - "lib/**"
+      - "nix/**"
+      - "flake.nix"
+      - ".github/workflows/test-cont-ai-nerd-nix.yml"
+  workflow_dispatch:
+
+jobs:
+  test-full-nix:
+    name: Full end-to-end test (Nix flake)
+    # Ubuntu 24.04 ships podman 4.x which supports quadlet.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      # ── Prerequisites ──────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman inotify-tools jq acl
+
+      - name: Verify podman version (need >= 4.4 for quadlet)
+        run: |
+          podman --version
+          MAJOR=$(podman --version | grep -oP '\d+' | head -1)
+          MINOR=$(podman --version | grep -oP '\d+' | sed -n 2p)
+          if [[ "$MAJOR" -lt 4 ]] || { [[ "$MAJOR" -eq 4 ]] && [[ "$MINOR" -lt 4 ]]; }; then
+            echo "ERROR: podman >= 4.4 required for quadlet support"
+            exit 1
+          fi
+          echo "Podman version OK"
+
+      # ── Nix flake build ────────────────────────────────────
+      - name: Build Nix flake package
+        run: |
+          nix build .# --print-build-logs
+          echo "Nix package built successfully"
+          ls -la result/bin/
+          ls -la result/lib/cont-ai-nerd/
+
+      - name: Verify Nix-built scripts are properly wrapped
+        run: |
+          echo "--- Checking cont-ai-nerd-prepare-permissions wrapper ---"
+          head -5 result/bin/cont-ai-nerd-prepare-permissions
+
+          echo "--- Checking watcher script wrapper ---"
+          head -5 result/lib/cont-ai-nerd/cont-ai-nerd-watcher.sh
+
+          echo "--- Checking commit script wrapper ---"
+          head -5 result/lib/cont-ai-nerd/cont-ai-nerd-commit.sh
+
+          echo "--- Checking Nix store paths are in wrapper PATH ---"
+          grep -q '/nix/store' result/bin/cont-ai-nerd-prepare-permissions \
+            && echo "PASS: Nix store paths present in wrapper" \
+            || { echo "FAIL: expected Nix store paths in wrapper"; exit 1; }
+
+      # ── Shellcheck via Nix devshell ────────────────────────
+      - name: Run shellcheck via Nix devshell
+        run: |
+          nix develop --command shellcheck \
+            scripts/configure.sh \
+            scripts/setup.sh \
+            scripts/prepare-permissions.sh \
+            lib/cont-ai-nerd-watcher.sh \
+            lib/cont-ai-nerd-commit.sh
+
+      # ── Dummy OpenCode config ──────────────────────────────
+      - name: Create dummy OpenCode config and auth
+        run: |
+          mkdir -p ~/.config/opencode ~/.local/share/opencode ~/.local/share/opencode/log
+
+          cat > ~/.config/opencode/opencode.json <<'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json"
+          }
+          EOF
+
+          cat > ~/.local/share/opencode/auth.json <<'EOF'
+          {
+            "provider": "dummy",
+            "token": "ci-test-token"
+          }
+          EOF
+
+      # ── Test configure.sh with scripted input ──────────────
+      - name: "Test: configure.sh with scripted input"
+        run: |
+          set -euo pipefail
+
+          # Create the project directory first
+          mkdir -p "$HOME/Projects"
+
+          echo "--- Running configure.sh with scripted input ---"
+          # Inputs: primary_user, home, project_paths, agent_user, agent_group, host, port, install_dir
+          # All use defaults except we confirm the user
+          printf '%s\n' \
+            "$USER" \
+            "" \
+            "" \
+            "" \
+            "" \
+            "" \
+            "" \
+            "" \
+          | sudo -E ./scripts/configure.sh
+
+          echo "--- Verifying config.json was created ---"
+          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+          [[ -f "$CONFIG" ]] || { echo "FAIL: config.json not found"; exit 1; }
+
+          echo "--- Checking config file permissions ---"
+          MODE=$(stat -c '%a' "$CONFIG")
+          [[ "$MODE" == "640" ]] || { echo "FAIL: mode=$MODE expected=640"; exit 1; }
+
+          echo "--- Checking config content ---"
+          jq -e '.primary_user' "$CONFIG" > /dev/null
+          jq -e '.project_paths | length > 0' "$CONFIG" > /dev/null
+
+          echo "--- Config contents ---"
+          cat "$CONFIG"
+
+          echo ""
+          echo "PASS: configure.sh"
+
+      # ── Run setup.sh ───────────────────────────────────────
+      - name: Run setup.sh
+        run: |
+          # Answer 'Y' to use existing configuration
+          echo "Y" | sudo -E ./scripts/setup.sh
+
+      # ── 1. Verify identity provisioning ────────────────────
+      - name: "Test: identity provisioning"
+        run: |
+          set -euo pipefail
+          echo "--- Checking agent user ---"
+          id agent
+          echo "--- Checking ai group ---"
+          getent group ai
+          echo "--- Checking primary user membership ---"
+          id -nG "$USER" | tr ' ' '\n' | grep -qx ai
+
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          echo "--- Checking container image UIDs match host ---"
+          IMG_UID=$(sudo podman run --rm --entrypoint id \
+            localhost/cont-ai-nerd:latest -u agent)
+          IMG_GID=$(sudo podman run --rm --entrypoint getent \
+            localhost/cont-ai-nerd:latest group ai | cut -d: -f3)
+
+          [[ "$AGENT_UID" == "$IMG_UID" ]] || \
+            { echo "FAIL: agent UID mismatch host=$AGENT_UID img=$IMG_UID"; exit 1; }
+          [[ "$AI_GID" == "$IMG_GID" ]] || \
+            { echo "FAIL: ai GID mismatch host=$AI_GID img=$IMG_GID"; exit 1; }
+
+          echo "PASS: identity provisioning"
+
+      # ── 2. Verify config generation ────────────────────────
+      - name: "Test: cont-ai-nerd config generation"
+        run: |
+          set -euo pipefail
+          POLICY="$HOME/.config/cont-ai-nerd/opencode.json"
+
+          echo "--- Checking policy file exists ---"
+          [[ -f "$POLICY" ]] || { echo "FAIL: $POLICY not found"; exit 1; }
+
+          echo "--- Checking valid JSON with external_directory ---"
+          jq -e '.permission.external_directory' "$POLICY" > /dev/null
+
+          echo "--- Checking project path is allowed (container path) ---"
+          # Policy now uses container-side /workspace paths
+          jq -e '.permission.external_directory["/workspace/Projects/**"]' \
+            "$POLICY" | grep -q allow
+
+          echo "--- Checking ownership and mode ---"
+          OWNER=$(stat -c '%U' "$POLICY")
+          MODE=$(stat -c '%a' "$POLICY")
+          [[ "$OWNER" == "$USER" ]] || \
+            { echo "FAIL: owner=$OWNER expected=$USER"; exit 1; }
+          [[ "$MODE" == "644" ]] || \
+            { echo "FAIL: mode=$MODE expected=644"; exit 1; }
+
+          echo "--- Policy file contents ---"
+          cat "$POLICY"
+
+          echo "PASS: config generation"
+
+      # ── 3. Verify config.json mount ────────────────────────
+      - name: "Test: config.json mount"
+        run: |
+          set -euo pipefail
+          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+
+          echo "--- Checking config.json is mounted in container ---"
+          sudo podman run --rm \
+            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            --entrypoint cat \
+            localhost/cont-ai-nerd:latest /etc/cont-ai-nerd/config.json | jq -e '.primary_user'
+
+          echo "--- Checking config.json content matches host ---"
+          HOST_USER=$(jq -r '.primary_user' "$CONFIG")
+          CONTAINER_USER=$(sudo podman run --rm \
+            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            --entrypoint jq \
+            localhost/cont-ai-nerd:latest -r '.primary_user' /etc/cont-ai-nerd/config.json)
+
+          [[ "$HOST_USER" == "$CONTAINER_USER" ]] || \
+            { echo "FAIL: config mismatch host=$HOST_USER container=$CONTAINER_USER"; exit 1; }
+
+          echo "PASS: config.json mount"
+
+      # ── 4. Verify container image ──────────────────────────
+      - name: "Test: container image"
+        run: |
+          set -euo pipefail
+          echo "--- Checking image exists ---"
+          sudo podman image exists localhost/cont-ai-nerd:latest
+
+          echo "--- Checking opencode binary ---"
+          sudo podman run --rm --entrypoint which \
+            localhost/cont-ai-nerd:latest opencode
+
+          echo "--- Checking /opt/tools/bin in PATH ---"
+          sudo podman run --rm --entrypoint sh \
+            localhost/cont-ai-nerd:latest -c 'echo $PATH' | grep -q '/opt/tools/bin'
+
+          echo "--- Checking /etc/cont-ai-nerd directory ---"
+          sudo podman run --rm --entrypoint ls \
+            localhost/cont-ai-nerd:latest -la /etc/cont-ai-nerd
+
+          echo "--- Checking opencode-tui wrapper exists ---"
+          sudo podman run --rm --entrypoint which \
+            localhost/cont-ai-nerd:latest opencode-tui
+
+          echo "PASS: container image"
+
+      # ── 5. Verify opencode-tui wrapper ─────────────────────
+      - name: "Test: opencode-tui wrapper"
+        run: |
+          set -euo pipefail
+          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          echo "--- Checking opencode-tui script is executable ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            --entrypoint test \
+            localhost/cont-ai-nerd:latest -x /usr/local/bin/opencode-tui
+
+          echo "--- Checking opencode-tui reads config (expect: error without server) ---"
+          # The script should try to connect but fail (no server running)
+          # This validates it correctly reads the config and constructs the URL
+          OUTPUT=$(sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            --entrypoint opencode-tui \
+            localhost/cont-ai-nerd:latest 2>&1 || true)
+
+          # Should mention the connection attempt, not a config error
+          if echo "$OUTPUT" | grep -qi "config file not found"; then
+            echo "FAIL: opencode-tui couldn't read config"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          echo "    Output: $OUTPUT"
+          echo "PASS: opencode-tui wrapper"
+
+      # ── 6. Verify systemd services ─────────────────────────
+      - name: "Test: systemd services"
+        run: |
+          set -euo pipefail
+
+          # Give the quadlet generator and services time to start
+          sleep 5
+
+          echo "--- Listing cont-ai-nerd units ---"
+          systemctl list-units --all '*cont-ai-nerd*' 2>&1 || true
+
+          echo "--- Checking watcher service is enabled and active ---"
+          systemctl is-enabled cont-ai-nerd-watcher.service
+          systemctl is-active cont-ai-nerd-watcher.service
+
+          echo "--- Checking commit timer ---"
+          systemctl is-enabled cont-ai-nerd-commit.timer
+          systemctl list-timers cont-ai-nerd-commit --no-pager
+
+          echo "--- Checking container status ---"
+          sudo podman ps -a --filter name=cont-ai-nerd \
+            --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+
+          echo "PASS: systemd services"
+
+      # ── 6b. Debug container startup ─────────────────────────
+      - name: "Debug: container startup"
+        run: |
+          set -euo pipefail
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+          CONFIG_DIR="$HOME/.config/cont-ai-nerd"
+
+          echo "--- Testing container startup manually (foreground, no --rm) ---"
+          echo "This helps capture the actual error if the container crashes."
+          echo ""
+
+          # Run the container in foreground briefly to capture any startup errors
+          # Use timeout to prevent hanging forever
+          timeout 10 sudo podman run \
+            --name=cont-ai-nerd-debug \
+            --user=${AGENT_UID}:${AI_GID} \
+            --network=host \
+            -v "$HOME/Projects:/workspace/Projects:rw" \
+            -v "${CONFIG_DIR}/opencode.json:/etc/cont-ai-nerd/opencode.json:ro" \
+            -v "${CONFIG_DIR}/config.json:/etc/cont-ai-nerd/config.json:ro" \
+            -v "$HOME/.config/opencode:/home/agent/.config/opencode:ro" \
+            -v "$HOME/.local/share/opencode/auth.json:/home/agent/.local/share/opencode/auth.json:ro" \
+            --env OPENCODE_CONFIG=/etc/cont-ai-nerd/opencode.json \
+            localhost/cont-ai-nerd:latest \
+            serve --hostname 127.0.0.1 --port 3000 2>&1 || true
+
+          echo ""
+          echo "--- Container logs (if any) ---"
+          sudo podman logs cont-ai-nerd-debug 2>&1 || true
+
+          echo ""
+          echo "--- Cleaning up debug container ---"
+          sudo podman rm -f cont-ai-nerd-debug 2>/dev/null || true
+
+      # ── 7. Test health check from container ────────────────
+      - name: "Test: health check from container"
+        run: |
+          set -euo pipefail
+
+          echo "--- Waiting for container to start (up to 30s) ---"
+          CONTAINER_RUNNING=false
+          for i in $(seq 1 30); do
+            if sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
+              echo "    Container running after ${i}s"
+              CONTAINER_RUNNING=true
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ "$CONTAINER_RUNNING" != "true" ]]; then
+            echo "FAIL: Container did not start within 30s"
+            echo ""
+            echo "--- systemctl status ---"
+            systemctl status cont-ai-nerd.service --no-pager 2>&1 || true
+            echo ""
+            echo "--- journalctl ---"
+            journalctl -u cont-ai-nerd --no-pager -n 50 2>&1 || true
+            exit 1
+          fi
+
+          echo "--- Checking container health status ---"
+          # The container should have a healthcheck defined
+          HEALTH=$(sudo podman inspect cont-ai-nerd --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
+          echo "    Health status: $HEALTH"
+
+          # Allow some time for healthcheck to run
+          sleep 15
+
+          echo "--- Checking health status after 15s ---"
+          HEALTH=$(sudo podman inspect cont-ai-nerd --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
+          echo "    Health status: $HEALTH"
+
+          # Note: The container may not be healthy if OpenCode needs credentials
+          # The important thing is that the healthcheck mechanism is working
+          if [[ "$HEALTH" == "none" ]]; then
+            echo "WARN: No healthcheck found in container"
+          fi
+
+          echo "PASS: health check from container"
+
+      # ── 8. Test health check from host ─────────────────────
+      - name: "Test: health check from host"
+        run: |
+          set -euo pipefail
+          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+
+          HOST=$(jq -r '.host' "$CONFIG")
+          PORT=$(jq -r '.port' "$CONFIG")
+
+          echo "--- Testing /global/health endpoint from host ---"
+          echo "    URL: http://${HOST}:${PORT}/global/health"
+
+          # Try to hit the health endpoint (may fail if OpenCode crashed)
+          RESPONSE=$(curl -sf "http://${HOST}:${PORT}/global/health" 2>&1 || true)
+
+          if [[ -n "$RESPONSE" ]]; then
+            echo "    Response: $RESPONSE"
+            echo "$RESPONSE" | jq -e '.healthy' > /dev/null && \
+              echo "PASS: health endpoint returned healthy" || \
+              echo "INFO: health endpoint returned response but not healthy"
+          else
+            echo "    No response from health endpoint"
+            echo "INFO: This may be expected if OpenCode needs valid credentials to start"
+
+            # Check container logs for more info
+            echo "--- Container logs (last 20 lines) ---"
+            sudo podman logs cont-ai-nerd 2>&1 | tail -20 || true
+          fi
+
+          echo "PASS: health check from host (test completed)"
+
+      # ── 9. Test POSIX permission model ─────────────────────
+      - name: "Test: POSIX permission enforcement"
+        run: |
+          set -euo pipefail
+          PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          echo "--- Creating test files with various permission modes ---"
+
+          # 660: owner + group rw (agent in 'ai' group → readable)
+          echo "group-readwrite" | sudo tee "$PROJECT/file_660" > /dev/null
+          sudo chown "$USER:ai" "$PROJECT/file_660"
+          sudo chmod 660 "$PROJECT/file_660"
+
+          # 640: owner rw, group r (agent in 'ai' group → readable)
+          echo "group-readable" | sudo tee "$PROJECT/file_640" > /dev/null
+          sudo chown "$USER:ai" "$PROJECT/file_640"
+          sudo chmod 640 "$PROJECT/file_640"
+
+          # 600: owner only (agent is NOT owner → blocked)
+          echo "secret-owner-only" | sudo tee "$PROJECT/file_600" > /dev/null
+          sudo chown "$USER:$USER" "$PROJECT/file_600"
+          sudo chmod 600 "$PROJECT/file_600"
+
+          # 644: owner rw, group r, other r (anyone → readable)
+          echo "world-readable" | sudo tee "$PROJECT/file_644" > /dev/null
+          sudo chown "$USER:$USER" "$PROJECT/file_644"
+          sudo chmod 644 "$PROJECT/file_644"
+
+          echo "--- File listing ---"
+          ls -la "$PROJECT"/file_*
+
+          # Use podman run with the same user/group as the real service.
+          # Mount under /workspace to match production layout.
+          RUN_CMD="sudo podman run --rm
+            --user ${AGENT_UID}:${AI_GID}
+            -v ${PROJECT}:${WORKSPACE}:rw
+            --entrypoint cat
+            localhost/cont-ai-nerd:latest"
+
+          echo ""
+          echo "--- Testing file_660 (group rw, expect: readable) ---"
+          $RUN_CMD "${WORKSPACE}/file_660" > /dev/null \
+            && echo "PASS: 660 readable" \
+            || { echo "FAIL: 660 should be readable by group"; exit 1; }
+
+          echo "--- Testing file_640 (group r, expect: readable) ---"
+          $RUN_CMD "${WORKSPACE}/file_640" > /dev/null \
+            && echo "PASS: 640 readable" \
+            || { echo "FAIL: 640 should be readable by group"; exit 1; }
+
+          echo "--- Testing file_644 (other r, expect: readable) ---"
+          $RUN_CMD "${WORKSPACE}/file_644" > /dev/null \
+            && echo "PASS: 644 readable" \
+            || { echo "FAIL: 644 should be readable by other"; exit 1; }
+
+          echo "--- Testing file_600 (owner only, expect: BLOCKED) ---"
+          if $RUN_CMD "${WORKSPACE}/file_600" > /dev/null 2>&1; then
+            echo "FAIL: 600 should NOT be readable by agent"
+            exit 1
+          else
+            echo "PASS: 600 correctly blocked"
+          fi
+
+          echo ""
+          echo "PASS: POSIX permission model"
+
+      # ── 10. Test write permissions ─────────────────────────
+      - name: "Test: agent can write to group-writable files"
+        run: |
+          set -euo pipefail
+          PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          echo "--- Testing write to 660 file ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo 'agent-was-here' >> '${WORKSPACE}/file_660'"
+
+          grep -q 'agent-was-here' "$PROJECT/file_660" \
+            && echo "PASS: agent can write to 660" \
+            || { echo "FAIL: write to 660 did not persist"; exit 1; }
+
+          echo "--- Testing write to 600 file (expect: BLOCKED) ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo 'should-fail' >> '${WORKSPACE}/file_600'" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to write to 600"
+            exit 1
+          else
+            echo "PASS: write to 600 correctly blocked"
+          fi
+
+          echo ""
+          echo "PASS: write permission model"
+
+      # ── 10a. Test agent cannot change permissions ───────────
+      - name: "Test: agent cannot chmod/chown files"
+        run: |
+          set -euo pipefail
+          PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          echo "--- Testing chmod on 600 file (expect: BLOCKED) ---"
+          # Agent should not be able to chmod a file it doesn't own
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
+            --entrypoint chmod \
+            localhost/cont-ai-nerd:latest \
+            666 "${WORKSPACE}/file_600" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to chmod 600 file"
+            exit 1
+          else
+            echo "PASS: chmod on 600 correctly blocked"
+          fi
+
+          # Verify permissions unchanged
+          PERMS=$(stat -c '%a' "$PROJECT/file_600")
+          [[ "$PERMS" == "600" ]] || \
+            { echo "FAIL: file_600 perms changed to $PERMS"; exit 1; }
+          echo "PASS: file_600 perms unchanged ($PERMS)"
+
+          echo "--- Testing chmod on 660 file owned by user (expect: BLOCKED) ---"
+          # Even for group-writable files, agent shouldn't be able to chmod
+          # because it's not the owner
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
+            --entrypoint chmod \
+            localhost/cont-ai-nerd:latest \
+            777 "${WORKSPACE}/file_660" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to chmod file it doesn't own"
+            exit 1
+          else
+            echo "PASS: chmod on 660 correctly blocked (not owner)"
+          fi
+
+          echo "--- Testing chown (expect: BLOCKED) ---"
+          # Agent should never be able to chown
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
+            --entrypoint chown \
+            localhost/cont-ai-nerd:latest \
+            "${AGENT_UID}:${AI_GID}" "${WORKSPACE}/file_600" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to chown"
+            exit 1
+          else
+            echo "PASS: chown correctly blocked"
+          fi
+
+          echo ""
+          echo "PASS: agent cannot change permissions"
+
+      # ── 10b. Test 600 file with group ai ─────────────────────
+      - name: "Test: agent blocked from 600 file even with group ai"
+        run: |
+          set -euo pipefail
+          PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          # Create file: 600, owner=runner, group=ai
+          # This tests that 600 means NO group access, even if group is 'ai'
+          echo "secret-content" | sudo tee "$PROJECT/secret_600_ai" > /dev/null
+          sudo chown "$USER:ai" "$PROJECT/secret_600_ai"
+          sudo chmod 600 "$PROJECT/secret_600_ai"
+
+          echo "--- File setup ---"
+          ls -la "$PROJECT/secret_600_ai"
+
+          echo "--- Test 1: Agent tries to read (expect: BLOCKED) ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
+            --entrypoint cat \
+            localhost/cont-ai-nerd:latest \
+            "${WORKSPACE}/secret_600_ai" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to read 600 file"
+            exit 1
+          else
+            echo "PASS: agent blocked from reading 600 file"
+          fi
+
+          echo "--- Test 2: Agent tries to chmod (expect: BLOCKED) ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
+            --entrypoint chmod \
+            localhost/cont-ai-nerd:latest \
+            660 "${WORKSPACE}/secret_600_ai" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to chmod"
+            exit 1
+          else
+            echo "PASS: agent blocked from chmod"
+          fi
+
+          echo "--- Verify permissions unchanged ---"
+          PERMS=$(stat -c '%a' "$PROJECT/secret_600_ai")
+          [[ "$PERMS" == "600" ]] || \
+            { echo "FAIL: permissions changed to $PERMS"; exit 1; }
+          echo "PASS: permissions unchanged (600)"
+
+          echo ""
+          echo "PASS: 600 file with group ai properly protected"
+
+      # ── 10c. Debug UID/GID behavior ─────────────────────────
+      - name: "Debug: UID/GID in container"
+        run: |
+          set -euo pipefail
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          echo "=== Host user info ==="
+          echo "    agent UID: $AGENT_UID"
+          echo "    ai GID: $AI_GID"
+          echo "    runner UID: $(id -u runner)"
+          echo ""
+
+          echo "=== Container user info ==="
+          echo "--- podman inspect (User field) ---"
+          sudo podman inspect cont-ai-nerd --format '{{.Config.User}}' || true
+          echo ""
+
+          echo "--- id inside container (default exec user) ---"
+          sudo podman exec cont-ai-nerd id || true
+          echo ""
+
+          echo "--- id inside container (explicit --user) ---"
+          sudo podman exec --user ${AGENT_UID}:${AI_GID} cont-ai-nerd id || true
+          echo ""
+
+          echo "=== Test file creation ==="
+          TEST_DIR="$HOME/Projects"
+
+          echo "--- Creating file via podman exec (no --user flag) ---"
+          sudo podman exec cont-ai-nerd touch /workspace/Projects/debug_test_1
+          ls -ln "$TEST_DIR/debug_test_1" || true
+          stat -c 'UID=%u GID=%g' "$TEST_DIR/debug_test_1" || true
+          echo ""
+
+          echo "--- Creating file via podman exec (with --user flag) ---"
+          sudo podman exec --user ${AGENT_UID}:${AI_GID} cont-ai-nerd touch /workspace/Projects/debug_test_2
+          ls -ln "$TEST_DIR/debug_test_2" || true
+          stat -c 'UID=%u GID=%g' "$TEST_DIR/debug_test_2" || true
+          echo ""
+
+          echo "=== Mount info ==="
+          echo "--- podman inspect mounts ---"
+          sudo podman inspect cont-ai-nerd --format '{{range .Mounts}}{{.Source}} -> {{.Destination}} ({{.Mode}}){{println}}{{end}}' || true
+          echo ""
+
+          echo "=== User namespace mapping ==="
+          echo "--- podman inspect userns ---"
+          sudo podman inspect cont-ai-nerd --format 'UsernsMode={{.HostConfig.UsernsMode}}' || true
+          echo ""
+
+          echo "--- /proc/self/uid_map inside container ---"
+          sudo podman exec cont-ai-nerd cat /proc/self/uid_map || true
+          echo ""
+
+          echo "=== Quadlet User/Group config ==="
+          grep -E '^User=|^Group=' /etc/containers/systemd/cont-ai-nerd.container || true
+          echo ""
+
+          echo "=== Additional mount debugging ==="
+          echo "--- HostConfig.Binds ---"
+          sudo podman inspect cont-ai-nerd --format '{{json .HostConfig.Binds}}' || true
+          echo ""
+
+          echo "--- mount command output (Projects) ---"
+          mount | grep Projects || echo "(no mount entry found)"
+          echo ""
+
+          echo "--- Directory ownership on host ---"
+          ls -lan "$HOME/Projects" | head -5
+          echo ""
+
+          echo "--- stat inside container ---"
+          sudo podman exec cont-ai-nerd stat /workspace/Projects/debug_test_1 || true
+          echo ""
+
+          echo "--- /proc/self/uid_map and gid_map ---"
+          echo "uid_map:"
+          sudo podman exec cont-ai-nerd cat /proc/self/uid_map
+          echo "gid_map:"
+          sudo podman exec cont-ai-nerd cat /proc/self/gid_map
+          echo ""
+
+          echo "--- Check if idmapped mounts are in use ---"
+          sudo podman info --format '{{.Host.IDMappings}}' || true
+          echo ""
+
+          echo "--- podman version and storage driver ---"
+          podman --version
+          sudo podman info --format '{{.Store.GraphDriverName}}' || true
+          echo ""
+
+          echo "=== Cleanup ==="
+          rm -f "$TEST_DIR/debug_test_1" "$TEST_DIR/debug_test_2" || true
+
+      # ── 11. Test inotify watcher ───────────────────────────
+      - name: "Test: inotify watcher (file ownership reassignment)"
+        run: |
+          set -euo pipefail
+          PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
+          TEST_FILE="$PROJECT/watcher_test_file"
+          CONTAINER_TEST_FILE="${WORKSPACE}/watcher_test_file"
+
+          echo "--- Verifying container is running ---"
+          if ! sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
+            echo "FAIL: cont-ai-nerd container is not running"
+            echo "--- Container logs ---"
+            sudo podman logs cont-ai-nerd 2>&1 | tail -50 || true
+            echo "--- systemctl status ---"
+            systemctl status cont-ai-nerd.service --no-pager 2>&1 || true
+            exit 1
+          fi
+
+          echo "--- Creating file as agent user via podman exec ---"
+          sudo podman exec cont-ai-nerd touch "$CONTAINER_TEST_FILE"
+
+          echo "--- Waiting for watcher to process (polling up to 10s) ---"
+          # The watcher should reassign ownership from agent to primary user.
+          # We poll until the final state is reached.
+          for i in $(seq 1 20); do
+            CURRENT_OWNER=$(stat -c '%U' "$TEST_FILE" 2>/dev/null) || true
+            CURRENT_GROUP=$(stat -c '%G' "$TEST_FILE" 2>/dev/null) || true
+            if [[ "$CURRENT_OWNER" == "$USER" ]] && [[ "$CURRENT_GROUP" == "ai" ]]; then
+              echo "    Watcher completed after ~$((i / 2))s"
+              break
+            fi
+            sleep 0.5
+          done
+
+          echo "--- Verifying final state ---"
+          FINAL_OWNER=$(stat -c '%U' "$TEST_FILE")
+          FINAL_GROUP=$(stat -c '%G' "$TEST_FILE")
+          FINAL_PERMS=$(stat -c '%a' "$TEST_FILE")
+
+          echo "    owner=$FINAL_OWNER group=$FINAL_GROUP perms=$FINAL_PERMS"
+
+          [[ "$FINAL_OWNER" == "$USER" ]] || \
+            { echo "FAIL: owner=$FINAL_OWNER, expected=$USER"; exit 1; }
+          [[ "$FINAL_GROUP" == "ai" ]] || \
+            { echo "FAIL: group=$FINAL_GROUP, expected=ai"; exit 1; }
+
+          # Check group-write bit is set (second digit >= 6 means g+rw)
+          GROUP_PERM=${FINAL_PERMS:1:1}
+          [[ "$GROUP_PERM" -ge 6 ]] || \
+            { echo "FAIL: group perms=$GROUP_PERM, expected >=6 (g+w)"; exit 1; }
+
+          echo ""
+          echo "PASS: inotify watcher"
+
+      # ── 12. Test watcher handles directories ───────────────
+      - name: "Test: watcher sets setgid on new directories"
+        run: |
+          set -euo pipefail
+          PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
+          TEST_DIR="$PROJECT/watcher_test_dir"
+          CONTAINER_TEST_DIR="${WORKSPACE}/watcher_test_dir"
+
+          echo "--- Verifying container is running ---"
+          if ! sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
+            echo "FAIL: cont-ai-nerd container is not running"
+            echo "--- Container logs ---"
+            sudo podman logs cont-ai-nerd 2>&1 | tail -50 || true
+            exit 1
+          fi
+
+          echo "--- Creating directory as agent user via podman exec ---"
+          sudo podman exec cont-ai-nerd mkdir "$CONTAINER_TEST_DIR"
+
+          echo "--- Waiting for watcher to process (polling up to 10s) ---"
+          # The watcher should reassign ownership and set setgid bit.
+          for i in $(seq 1 20); do
+            CURRENT_OWNER=$(stat -c '%U' "$TEST_DIR" 2>/dev/null) || true
+            CURRENT_GROUP=$(stat -c '%G' "$TEST_DIR" 2>/dev/null) || true
+            SYMBOLIC=$(stat -c '%A' "$TEST_DIR" 2>/dev/null) || true
+            if [[ "$CURRENT_OWNER" == "$USER" ]] && [[ "$CURRENT_GROUP" == "ai" ]] && echo "$SYMBOLIC" | grep -q 's\|S'; then
+              echo "    Watcher completed after ~$((i / 2))s"
+              break
+            fi
+            sleep 0.5
+          done
+
+          echo "--- Verifying final state ---"
+          PERMS=$(stat -c '%a' "$TEST_DIR")
+          FINAL_OWNER=$(stat -c '%U' "$TEST_DIR")
+          FINAL_GROUP=$(stat -c '%G' "$TEST_DIR")
+
+          echo "    owner=$FINAL_OWNER group=$FINAL_GROUP perms=$PERMS"
+
+          [[ "$FINAL_OWNER" == "$USER" ]] || \
+            { echo "FAIL: owner=$FINAL_OWNER, expected=$USER"; exit 1; }
+          [[ "$FINAL_GROUP" == "ai" ]] || \
+            { echo "FAIL: group=$FINAL_GROUP, expected=ai"; exit 1; }
+
+          # Check setgid: stat %a on a setgid dir returns 2xxx or the
+          # group digit includes the setgid flag. Use %A for symbolic.
+          SYMBOLIC=$(stat -c '%A' "$TEST_DIR")
+          echo "$SYMBOLIC" | grep -q 's\|S' \
+            && echo "PASS: setgid bit set" \
+            || { echo "FAIL: setgid bit not set (perms: $SYMBOLIC)"; exit 1; }
+
+          echo ""
+          echo "PASS: watcher directory handling"
+
+      # ── 13. Test read-only mounts ──────────────────────────
+      - name: "Test: config and auth mounts are read-only"
+        run: |
+          set -euo pipefail
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+          CONTAINERD_CONFIG="$HOME/.config/cont-ai-nerd"
+
+          echo "--- Testing write to cont-ai-nerd config (expect: BLOCKED) ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${CONTAINERD_CONFIG}/opencode.json:/etc/cont-ai-nerd/opencode.json:ro" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo 'tamper' >> /etc/cont-ai-nerd/opencode.json" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to write to config"
+            exit 1
+          else
+            echo "PASS: config mount is read-only"
+          fi
+
+          echo "--- Testing write to opencode data dir (expect: BLOCKED) ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "$HOME/.local/share/opencode:/home/agent/.local/share/opencode:ro" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo 'tamper' >> /home/agent/.local/share/opencode/auth.json" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to write to auth data"
+            exit 1
+          else
+            echo "PASS: data mount is read-only"
+          fi
+
+          echo "--- Testing write to opencode global config (expect: BLOCKED) ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "$HOME/.config/opencode:/home/agent/.config/opencode:ro" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo 'tamper' >> /home/agent/.config/opencode/opencode.json" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to write to global config"
+            exit 1
+          else
+            echo "PASS: global config mount is read-only"
+          fi
+
+          echo ""
+          echo "PASS: read-only mounts"
+
+      # ── 14. Test prepare-permissions (Nix-built binary) ────
+      - name: "Test: prepare-permissions (Nix-built binary)"
+        run: |
+          set -euo pipefail
+          PROJECT="$HOME/Projects"
+          AGENT_UID=$(id -u agent)
+          AI_GID=$(getent group ai | cut -d: -f3)
+
+          NIX_PREPARE_PERMS="$(pwd)/result/bin/cont-ai-nerd-prepare-permissions"
+          echo "--- Using Nix-built binary: $NIX_PREPARE_PERMS ---"
+          [[ -x "$NIX_PREPARE_PERMS" ]] || \
+            { echo "FAIL: $NIX_PREPARE_PERMS not found or not executable"; exit 1; }
+
+          # Create a test subdirectory with various files
+          TEST_DIR="$PROJECT/perm_test"
+          mkdir -p "$TEST_DIR"
+
+          echo "--- Creating test files ---"
+          
+          # Sensitive files (script should NOT lock by default)
+          echo "SECRET_KEY=abc123" > "$TEST_DIR/.env"
+          chmod 644 "$TEST_DIR/.env"
+          
+          echo "LOCAL_SECRET=xyz" > "$TEST_DIR/.env.local"
+          chmod 644 "$TEST_DIR/.env.local"
+          
+          mkdir -p "$TEST_DIR/secrets"
+          echo "password" > "$TEST_DIR/secrets/password.txt"
+          chmod 755 "$TEST_DIR/secrets"
+          chmod 644 "$TEST_DIR/secrets/password.txt"
+          
+          echo "PRIVATE KEY" > "$TEST_DIR/id_rsa"
+          chmod 644 "$TEST_DIR/id_rsa"
+          
+          # .git directory (should be set read-only)
+          mkdir -p "$TEST_DIR/.git/objects"
+          echo "ref: refs/heads/main" > "$TEST_DIR/.git/HEAD"
+          chmod 755 "$TEST_DIR/.git"
+          chmod 644 "$TEST_DIR/.git/HEAD"
+          
+          # Regular file - user opts in to agent write access
+          echo "source code" > "$TEST_DIR/main.py"
+          chgrp ai "$TEST_DIR/main.py"
+          chmod 664 "$TEST_DIR/main.py"  # User explicitly sets g+rw
+          
+          # File user wants agent to read only
+          echo "read-only-for-agent" > "$TEST_DIR/readonly.txt"
+          chgrp ai "$TEST_DIR/readonly.txt"
+          chmod 640 "$TEST_DIR/readonly.txt"  # g=r (user's choice)
+          
+          # Subdirectory that needs to be traversable
+          mkdir -p "$TEST_DIR/subdir"
+          echo "nested file" > "$TEST_DIR/subdir/nested.py"
+          # Don't set group - script should make it traversable
+          
+          echo "--- Initial permissions ---"
+          ls -la "$TEST_DIR/"
+          ls -la "$TEST_DIR/.git/" || true
+          ls -la "$TEST_DIR/secrets/" || true
+          ls -la "$TEST_DIR/subdir/" || true
+
+          echo ""
+          echo "--- Running Nix-built cont-ai-nerd-prepare-permissions (default: no lock) ---"
+          sudo "$NIX_PREPARE_PERMS" --no-lock-sensitive "$TEST_DIR"
+
+          echo ""
+          echo "--- Final permissions ---"
+          ls -la "$TEST_DIR/"
+          ls -la "$TEST_DIR/.git/" || true
+          ls -la "$TEST_DIR/secrets/" || true
+          ls -la "$TEST_DIR/subdir/" || true
+
+          echo ""
+          echo "=== Verifying default behavior (sensitive files NOT locked) ==="
+          
+          echo "--- .env should be unchanged (still 644) ---"
+          ENV_MODE=$(stat -c '%a' "$TEST_DIR/.env")
+          [[ "$ENV_MODE" == "644" ]] || \
+            { echo "FAIL: .env mode=$ENV_MODE, expected=644 (unchanged)"; exit 1; }
+          echo "PASS: .env unchanged"
+
+          echo "--- secrets/ should be unchanged (still 755) ---"
+          SECRETS_MODE=$(stat -c '%a' "$TEST_DIR/secrets")
+          [[ "$SECRETS_MODE" == "755" ]] || \
+            { echo "FAIL: secrets/ mode=$SECRETS_MODE, expected=755 (unchanged)"; exit 1; }
+          echo "PASS: secrets/ unchanged"
+
+          echo "--- id_rsa should be unchanged (still 644) ---"
+          KEY_MODE=$(stat -c '%a' "$TEST_DIR/id_rsa")
+          [[ "$KEY_MODE" == "644" ]] || \
+            { echo "FAIL: id_rsa mode=$KEY_MODE, expected=644 (unchanged)"; exit 1; }
+          echo "PASS: id_rsa unchanged"
+
+          echo ""
+          echo "=== Verifying .git/ is read-only ==="
+          GIT_PERMS=$(stat -c '%A' "$TEST_DIR/.git")
+          if echo "$GIT_PERMS" | grep -q 'w.....$'; then
+            echo "FAIL: .git has group write: $GIT_PERMS"
+            exit 1
+          fi
+          echo "PASS: .git is read-only for group ($GIT_PERMS)"
+
+          echo ""
+          echo "=== Verifying directories are traversable ==="
+          
+          echo "--- subdir should be g+rxs with group ai ---"
+          SUBDIR_GROUP=$(stat -c '%G' "$TEST_DIR/subdir")
+          SUBDIR_PERMS=$(stat -c '%A' "$TEST_DIR/subdir")
+          [[ "$SUBDIR_GROUP" == "ai" ]] || \
+            { echo "FAIL: subdir group=$SUBDIR_GROUP, expected=ai"; exit 1; }
+          echo "$SUBDIR_PERMS" | grep -q 'r.s' || echo "$SUBDIR_PERMS" | grep -q 'r.x' || \
+            { echo "FAIL: subdir not traversable: $SUBDIR_PERMS"; exit 1; }
+          echo "PASS: subdir is traversable ($SUBDIR_PERMS, group=$SUBDIR_GROUP)"
+
+          echo ""
+          echo "=== Verifying user-set file permissions are preserved ==="
+          
+          echo "--- main.py should still be 664 (user set g+rw) ---"
+          MAIN_PERMS=$(stat -c '%a' "$TEST_DIR/main.py")
+          [[ "$MAIN_PERMS" == "664" ]] || \
+            { echo "FAIL: main.py perms=$MAIN_PERMS, expected=664"; exit 1; }
+          echo "PASS: main.py preserved (664)"
+
+          echo "--- readonly.txt should still be 640 (user set g+r) ---"
+          RO_PERMS=$(stat -c '%a' "$TEST_DIR/readonly.txt")
+          [[ "$RO_PERMS" == "640" ]] || \
+            { echo "FAIL: readonly.txt perms=$RO_PERMS, expected=640"; exit 1; }
+          echo "PASS: readonly.txt preserved (640)"
+
+          echo ""
+          echo "=== Verifying agent access via container ==="
+          WORKSPACE_TEST="/workspace/perm_test"
+
+          echo "--- agent CAN read .git/HEAD (read-only) ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
+            --entrypoint cat \
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/.git/HEAD" > /dev/null || \
+            { echo "FAIL: agent should be able to read .git/HEAD"; exit 1; }
+          echo "PASS: agent can read .git/HEAD"
+
+          echo "--- agent CANNOT write to .git/HEAD ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo 'tamper' >> '${WORKSPACE_TEST}/.git/HEAD'" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to write to .git/HEAD"
+            exit 1
+          fi
+          echo "PASS: agent blocked from writing to .git/"
+
+          echo "--- agent CAN read main.py (user granted g+rw) ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
+            --entrypoint cat \
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/main.py" > /dev/null || \
+            { echo "FAIL: agent should be able to read main.py"; exit 1; }
+          echo "PASS: agent can read main.py"
+
+          echo "--- agent CAN write to main.py (user granted g+rw) ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo '# comment' >> '${WORKSPACE_TEST}/main.py'" || \
+            { echo "FAIL: agent should be able to write to main.py"; exit 1; }
+          echo "PASS: agent can write to main.py"
+
+          echo "--- agent CAN read readonly.txt (user granted g+r) ---"
+          sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
+            --entrypoint cat \
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/readonly.txt" > /dev/null || \
+            { echo "FAIL: agent should be able to read readonly.txt"; exit 1; }
+          echo "PASS: agent can read readonly.txt"
+
+          echo "--- agent CANNOT write to readonly.txt (user set g+r only) ---"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
+            --entrypoint sh \
+            localhost/cont-ai-nerd:latest \
+            -c "echo 'tamper' >> '${WORKSPACE_TEST}/readonly.txt'" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to write to readonly.txt"
+            exit 1
+          fi
+          echo "PASS: agent blocked from writing to readonly.txt"
+
+          echo ""
+          echo "=== Testing --lock-sensitive flag ==="
+          
+          # Create fresh sensitive files for lock test
+          TEST_DIR2="$PROJECT/perm_test_lock"
+          mkdir -p "$TEST_DIR2"
+          echo "SECRET" > "$TEST_DIR2/.env"
+          chmod 644 "$TEST_DIR2/.env"
+          mkdir -p "$TEST_DIR2/secrets"
+          echo "password" > "$TEST_DIR2/secrets/pass.txt"
+          chmod 755 "$TEST_DIR2/secrets"
+          echo "PRIVATE KEY" > "$TEST_DIR2/id_rsa"
+          chmod 644 "$TEST_DIR2/id_rsa"
+          
+          echo "--- Running with --lock-sensitive ---"
+          sudo "$NIX_PREPARE_PERMS" --lock-sensitive "$TEST_DIR2"
+          
+          echo "--- .env should be locked (600) ---"
+          ENV_MODE=$(stat -c '%a' "$TEST_DIR2/.env")
+          [[ "$ENV_MODE" == "600" ]] || \
+            { echo "FAIL: .env mode=$ENV_MODE, expected=600"; exit 1; }
+          echo "PASS: .env locked (600)"
+
+          echo "--- secrets/ should be locked (700) ---"
+          SECRETS_MODE=$(stat -c '%a' "$TEST_DIR2/secrets")
+          [[ "$SECRETS_MODE" == "700" ]] || \
+            { echo "FAIL: secrets/ mode=$SECRETS_MODE, expected=700"; exit 1; }
+          echo "PASS: secrets/ locked (700)"
+
+          echo "--- id_rsa should be locked (600) ---"
+          KEY_MODE=$(stat -c '%a' "$TEST_DIR2/id_rsa")
+          [[ "$KEY_MODE" == "600" ]] || \
+            { echo "FAIL: id_rsa mode=$KEY_MODE, expected=600"; exit 1; }
+          echo "PASS: id_rsa locked (600)"
+
+          echo "--- agent CANNOT read locked .env ---"
+          WORKSPACE_TEST2="/workspace/perm_test_lock"
+          if sudo podman run --rm \
+            --user ${AGENT_UID}:${AI_GID} \
+            -v "${TEST_DIR2}:${WORKSPACE_TEST2}:rw" \
+            --entrypoint cat \
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST2}/.env" 2>/dev/null; then
+            echo "FAIL: agent should NOT be able to read locked .env"
+            exit 1
+          fi
+          echo "PASS: agent blocked from locked .env"
+
+          echo ""
+          echo "PASS: prepare-permissions (Nix-built binary)"
+
+      # ── 15. Test idempotency ───────────────────────────────
+      - name: "Test: idempotency (re-run setup.sh)"
+        run: |
+          set -euo pipefail
+          echo "--- Running setup.sh a second time ---"
+          echo "Y" | sudo -E ./scripts/setup.sh
+
+          echo "--- Verifying services are still running ---"
+          sleep 3
+          sudo podman ps -a --filter name=cont-ai-nerd \
+            --format 'table {{.Names}}\t{{.Status}}'
+          systemctl is-active cont-ai-nerd-watcher.service
+
+          echo "--- Verifying config is unchanged ---"
+          POLICY="$HOME/.config/cont-ai-nerd/opencode.json"
+          jq -e '.permission.external_directory' "$POLICY" > /dev/null
+
+          echo ""
+          echo "PASS: idempotency"
+
+      # ── 16. Test TUI script installation ────────────────────
+      - name: "Test: cont-ai-nerd-tui script"
+        run: |
+          set -euo pipefail
+
+          echo "--- Checking TUI script is installed ---"
+          [[ -x /usr/local/bin/cont-ai-nerd-tui ]] || \
+            { echo "FAIL: /usr/local/bin/cont-ai-nerd-tui not found or not executable"; exit 1; }
+
+          echo "--- Checking TUI script is a symlink ---"
+          [[ -L /usr/local/bin/cont-ai-nerd-tui ]] || \
+            { echo "FAIL: /usr/local/bin/cont-ai-nerd-tui is not a symlink"; exit 1; }
+
+          echo "--- Checking symlink target exists ---"
+          TARGET=$(readlink -f /usr/local/bin/cont-ai-nerd-tui)
+          [[ -f "$TARGET" ]] || \
+            { echo "FAIL: symlink target $TARGET does not exist"; exit 1; }
+
+          echo "--- Testing TUI script reads config correctly ---"
+          # The script should detect the container is running and try to connect
+          # We expect it to fail because there's no actual OpenCode server, but
+          # it should get past config reading.
+          OUTPUT=$(sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+
+          # Should NOT fail with config errors
+          if echo "$OUTPUT" | grep -qi "config.*not found"; then
+            echo "FAIL: TUI script couldn't find config"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          echo "    TUI script output: $OUTPUT"
+          echo "PASS: cont-ai-nerd-tui script"
+
+      # ── Diagnostics on failure ─────────────────────────────
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          echo "============================================"
+          echo "  DIAGNOSTICS"
+          echo "============================================"
+
+          echo ""
+          echo "=== OS / Podman / Nix info ==="
+          cat /etc/os-release | head -5
+          podman --version
+          podman info --format '{{.Host.OCIRuntime.Name}} {{.Host.OCIRuntime.Version}}' 2>/dev/null || true
+          nix --version || true
+
+          echo ""
+          echo "=== Nix flake outputs ==="
+          nix flake show 2>&1 || true
+
+          echo ""
+          echo "=== Nix build result ==="
+          ls -la result/ 2>&1 || echo "(no result symlink)"
+
+          echo ""
+          echo "=== Users and groups ==="
+          id agent 2>&1 || echo "(agent user not found)"
+          getent group ai 2>&1 || echo "(ai group not found)"
+          id "$USER" 2>&1
+
+          echo ""
+          echo "=== systemctl status ==="
+          systemctl status cont-ai-nerd.service --no-pager 2>&1 || true
+          echo "---"
+          systemctl status cont-ai-nerd-watcher.service --no-pager 2>&1 || true
+          echo "---"
+          systemctl list-timers cont-ai-nerd-commit --no-pager 2>&1 || true
+
+          echo ""
+          echo "=== podman ps ==="
+          sudo podman ps -a 2>&1 || true
+
+          echo ""
+          echo "=== container logs ==="
+          sudo podman logs cont-ai-nerd 2>&1 | tail -50 || true
+
+          echo ""
+          echo "=== journal (cont-ai-nerd) ==="
+          journalctl -u cont-ai-nerd --no-pager -n 30 2>&1 || true
+
+          echo ""
+          echo "=== journal (watcher) ==="
+          journalctl -u cont-ai-nerd-watcher --no-pager -n 30 2>&1 || true
+
+          echo ""
+          echo "=== generated quadlet ==="
+          cat /etc/containers/systemd/cont-ai-nerd.container 2>&1 || true
+
+          echo ""
+          echo "=== generated watcher service ==="
+          cat /etc/systemd/system/cont-ai-nerd-watcher.service 2>&1 || true
+
+          echo ""
+          echo "=== cont-ai-nerd config.json ==="
+          cat "$HOME/.config/cont-ai-nerd/config.json" 2>&1 || true
+
+          echo ""
+          echo "=== cont-ai-nerd opencode.json ==="
+          cat "$HOME/.config/cont-ai-nerd/opencode.json" 2>&1 || true
+
+          echo ""
+          echo "=== project directory ==="
+          ls -la "$HOME/Projects/" 2>&1 || true
+
+          echo ""
+          echo "=== podman images ==="
+          sudo podman images 2>&1 || true

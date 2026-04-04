@@ -54,6 +54,56 @@ warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 die()   { error "$@"; exit 1; }
 
+# ── Path mapping functions ───────────────────────────────────────────────
+# These compute container-side paths under /workspace by stripping the
+# common parent directory from all project paths.
+#
+# Example: /home/alice/Projects, /home/alice/work
+#   → common parent: /home/alice
+#   → container paths: /workspace/Projects, /workspace/work
+
+# find_common_parent: Find the longest common directory prefix of all paths.
+# Usage: find_common_parent "/path/a" "/path/b" ...
+# Output: The common parent directory (e.g., "/path")
+find_common_parent() {
+  local -a paths=("$@")
+  [[ ${#paths[@]} -eq 0 ]] && return 1
+  
+  # Start with the first path's directory components
+  local common="${paths[0]}"
+  
+  for path in "${paths[@]:1}"; do
+    # Reduce common prefix until it matches the current path
+    while [[ "${path}" != "${common}"* ]]; do
+      # Remove the last component from common
+      common="${common%/*}"
+      [[ -z "$common" ]] && common="/"
+      [[ "$common" == "/" ]] && break
+    done
+  done
+  
+  echo "$common"
+}
+
+# get_container_path: Convert a host path to its container-side equivalent.
+# Usage: get_container_path "/home/alice/Projects" "/home/alice"
+# Output: /workspace/Projects
+get_container_path() {
+  local host_path="$1"
+  local common_parent="$2"
+  
+  if [[ "$common_parent" == "/" ]]; then
+    # No common parent other than root — use full path under /workspace
+    echo "/workspace${host_path}"
+  else
+    # Strip the common parent to get the unique suffix
+    local suffix="${host_path#"$common_parent"}"
+    # Ensure suffix starts with /
+    [[ "$suffix" != /* ]] && suffix="/${suffix}"
+    echo "/workspace${suffix}"
+  fi
+}
+
 # ── Root check ───────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
   die "This script must be run as root (sudo ./setup.sh)"
@@ -165,6 +215,13 @@ fi
 # ── Derived values ───────────────────────────────────────────────────────
 CONTAINERD_CONFIG="${PRIMARY_HOME}/.config/cont-ai-nerd"
 
+# Compute common parent and container-side paths for /workspace mounts
+COMMON_PARENT=$(find_common_parent "${PROJECT_PATHS[@]}")
+declare -A CONTAINER_PATHS
+for p in "${PROJECT_PATHS[@]}"; do
+  CONTAINER_PATHS["$p"]=$(get_container_path "$p" "$COMMON_PARENT")
+done
+
 echo ""
 echo "================================================================="
 echo "  cont-ai-nerd — Podman Setup"
@@ -173,9 +230,15 @@ echo "  Primary user  : ${PRIMARY_USER} (home: ${PRIMARY_HOME})"
 echo "  Agent user    : ${AGENT_USER}"
 echo "  Agent group   : ${AGENT_GROUP}"
 echo "  Project paths : ${PROJECT_PATHS[*]}"
+echo "  Common parent : ${COMMON_PARENT}"
 echo "  Config dir    : ${CONTAINERD_CONFIG}"
 echo "  Install dir   : ${INSTALL_DIR}"
 echo "  Listen        : ${HOST}:${PORT}"
+echo ""
+echo "  Container mount mapping:"
+for p in "${PROJECT_PATHS[@]}"; do
+  echo "    ${p} → ${CONTAINER_PATHS[$p]}"
+done
 echo "================================================================="
 echo ""
 
@@ -224,7 +287,7 @@ mkdir -p "${CONTAINERD_CONFIG}"
 chown "${PRIMARY_USER}:${PRIMARY_USER}" "${CONTAINERD_CONFIG}"
 
 # Generate external_directory policy — allows the agent to access exactly
-# the paths that are bind-mounted into the container.
+# the paths that are bind-mounted into the container (using container-side paths).
 POLICY_FILE="${CONTAINERD_CONFIG}/opencode.json"
 {
   echo '{'
@@ -233,7 +296,8 @@ POLICY_FILE="${CONTAINERD_CONFIG}/opencode.json"
   echo '    "external_directory": {'
   for i in "${!PROJECT_PATHS[@]}"; do
     comma=$([[ $i -lt $((${#PROJECT_PATHS[@]} - 1)) ]] && echo "," || echo "")
-    echo "      \"${PROJECT_PATHS[$i]}/**\": \"allow\"${comma}"
+    container_path="${CONTAINER_PATHS[${PROJECT_PATHS[$i]}]}"
+    echo "      \"${container_path}/**\": \"allow\"${comma}"
   done
   echo '    }'
   echo '  }'
@@ -279,6 +343,11 @@ echo "==> [6/8] Installing scripts to ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}"
 install -m 755 "${LIB_DIR}/cont-ai-nerd-watcher.sh"  "${INSTALL_DIR}/"
 install -m 755 "${LIB_DIR}/cont-ai-nerd-commit.sh"   "${INSTALL_DIR}/"
+install -m 755 "${LIB_DIR}/cont-ai-nerd-tui.sh"      "${INSTALL_DIR}/"
+
+# Symlink TUI script to /usr/local/bin for easy access
+ln -sf "${INSTALL_DIR}/cont-ai-nerd-tui.sh" /usr/local/bin/cont-ai-nerd-tui
+echo "    Installed cont-ai-nerd-tui → /usr/local/bin/cont-ai-nerd-tui"
 
 # ── 7. Render & install systemd units ─────────────────────────────────────
 echo ""
@@ -287,10 +356,11 @@ echo "==> [7/8] Installing systemd units..."
 # --- Quadlet ---
 mkdir -p "${QUADLET_DIR}"
 
-# Build the Volume= lines for project paths.
+# Build the Volume= lines for project paths using /workspace container paths.
 VOLUME_LINES=""
 for p in "${PROJECT_PATHS[@]}"; do
-  VOLUME_LINES+="Volume=${p}:${p}:rw,Z"$'\n'
+  container_path="${CONTAINER_PATHS[$p]}"
+  VOLUME_LINES+="Volume=${p}:${container_path}:rw,Z"$'\n'
 done
 # Remove trailing newline for clean substitution.
 VOLUME_LINES="${VOLUME_LINES%$'\n'}"
@@ -365,7 +435,8 @@ echo "================================================================="
 echo "  cont-ai-nerd setup complete."
 echo ""
 echo "  Container : podman ps | grep cont-ai-nerd"
-echo "  TUI       : podman exec -it cont-ai-nerd opencode-tui"
+echo "  TUI (rw)  : sudo cont-ai-nerd-tui        # can run /connect"
+echo "  TUI (ro)  : podman exec -it cont-ai-nerd opencode-tui"
 echo "  Watcher   : systemctl status cont-ai-nerd-watcher"
 echo "  Commits   : systemctl list-timers cont-ai-nerd-commit"
 echo "  Logs      : journalctl -u cont-ai-nerd -f"

@@ -246,6 +246,9 @@ in {
     # -- Podman --
     virtualisation.podman.enable = true;
 
+    # Ensure short image names (e.g., ubuntu:24.04) resolve to docker.io
+    virtualisation.containers.registries.search = [ "docker.io" ];
+
     # -- Users & groups --
     users.groups.${cfg.agent.group} = {};
 
@@ -312,7 +315,7 @@ in {
             chmod 600 "$AUTH_FILE"
           fi
         '';
-        deps = [];
+        deps = [ "users" "groups" ];
       };
 
       # Resolve UID/GID and patch the Quadlet file.

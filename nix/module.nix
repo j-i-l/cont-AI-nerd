@@ -5,6 +5,52 @@ let
 
   scripts = pkgs.callPackage ./scripts.nix {};
 
+  # Compute the common parent directory of all project paths.
+  # This is used to strip the prefix and mount under /workspace.
+  # Example: ["/home/alice/Projects" "/home/alice/work"] → "/home/alice"
+  findCommonParent = paths:
+    let
+      # Split each path into components
+      splitPath = p: lib.filter (s: s != "") (lib.splitString "/" p);
+      allComponents = map splitPath paths;
+      
+      # Find common prefix of all component lists
+      minLen = lib.foldl' (acc: cs: lib.min acc (lib.length cs)) 
+                          (lib.length (lib.head allComponents)) 
+                          allComponents;
+      
+      # Check if all paths have the same component at index i
+      allSameAt = i: 
+        let comp = lib.elemAt (lib.head allComponents) i;
+        in lib.all (cs: lib.elemAt cs i == comp) allComponents;
+      
+      # Find how many components are common
+      commonCount = lib.foldl' 
+        (acc: i: if acc == i && allSameAt i then i + 1 else acc) 
+        0 
+        (lib.range 0 (minLen - 1));
+      
+      # Build the common parent path
+      commonComponents = lib.take commonCount (lib.head allComponents);
+    in 
+      if lib.length paths == 0 then "/"
+      else if lib.length paths == 1 then lib.head paths
+      else "/" + lib.concatStringsSep "/" commonComponents;
+
+  commonParent = findCommonParent cfg.projectPaths;
+
+  # Convert a host path to its container-side equivalent under /workspace
+  getContainerPath = hostPath:
+    let
+      suffix = lib.removePrefix commonParent hostPath;
+      cleanSuffix = if lib.hasPrefix "/" suffix then suffix else "/" + suffix;
+    in "/workspace" + cleanSuffix;
+
+  # Map of host paths to container paths
+  containerPaths = lib.listToAttrs (map (p: 
+    lib.nameValuePair p (getContainerPath p)
+  ) cfg.projectPaths);
+
   # Generate config.json from module options
   configJson = pkgs.writeText "cont-ai-nerd-config.json" (builtins.toJSON {
     primary_user  = cfg.primaryUser;
@@ -17,17 +63,17 @@ let
     install_dir   = "${scripts}/lib/cont-ai-nerd";
   });
 
-  # Generate opencode.json policy file
+  # Generate opencode.json policy file using container-side paths
   opencodePolicy = pkgs.writeText "cont-ai-nerd-opencode.json" (builtins.toJSON {
     "$schema" = "https://opencode.ai/config.json";
     permission.external_directory =
-      lib.listToAttrs (map (p: lib.nameValuePair "${p}/**" "allow") cfg.projectPaths);
+      lib.listToAttrs (map (p: lib.nameValuePair "${containerPaths.${p}}/**" "allow") cfg.projectPaths);
   });
 
   # Render the Quadlet .container file with Nix-substituted values.
-  # Volume lines are generated from projectPaths.
+  # Volume lines map host paths to /workspace container paths.
   volumeLines = lib.concatMapStringsSep "\n" (p:
-    "Volume=${p}:${p}:rw"
+    "Volume=${p}:${containerPaths.${p}}:rw"
   ) cfg.projectPaths;
 
   containerFile = pkgs.writeText "cont-ai-nerd.container" ''
@@ -46,7 +92,7 @@ let
     Group=@@AGENT_GID@@
 
     # ---------- Bind mounts ----------
-    # Project directories (read-write)
+    # Project directories (read-write, mounted under /workspace)
     ${volumeLines}
 
     # cont-ai-nerd generated policy (read-only)
@@ -78,6 +124,41 @@ let
 
     [Install]
     WantedBy=multi-user.target
+  '';
+
+  # TUI wrapper script that runs a separate container with rw auth mount
+  tuiScript = pkgs.writeShellScriptBin "cont-ai-nerd-tui" ''
+    set -euo pipefail
+
+    CONFIG="${cfg.primaryHome}/.config/cont-ai-nerd/config.json"
+
+    if [[ ! -f "$CONFIG" ]]; then
+      echo "Error: Configuration not found at $CONFIG" >&2
+      exit 1
+    fi
+
+    HOST=$(${pkgs.jq}/bin/jq -r '.host // "127.0.0.1"' "$CONFIG")
+    PORT=$(${pkgs.jq}/bin/jq -r '.port // 3000' "$CONFIG")
+
+    AGENT_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.agent.user} 2>/dev/null || echo 1001)
+    AGENT_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.agent.user} 2>/dev/null || echo 1001)
+
+    if ! ${pkgs.podman}/bin/podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
+      echo "Error: cont-ai-nerd container is not running." >&2
+      echo "Start it with: systemctl start cont-ai-nerd" >&2
+      exit 1
+    fi
+
+    exec ${pkgs.podman}/bin/podman run --rm -it \
+      --name cont-ai-nerd-tui-$$ \
+      --user "''${AGENT_UID}:''${AGENT_GID}" \
+      --network host \
+      -v "${cfg.primaryHome}/.local/share/opencode:/home/agent/.local/share/opencode:rw" \
+      -v "${cfg.primaryHome}/.config/opencode:/home/agent/.config/opencode:ro" \
+      -v "${cfg.primaryHome}/.config/cont-ai-nerd:/etc/cont-ai-nerd:ro" \
+      --entrypoint opencode \
+      localhost/cont-ai-nerd:latest \
+      attach "http://''${HOST}:''${PORT}" "$@"
   '';
 
 in {
@@ -174,6 +255,7 @@ in {
     # -- Packages available on the host --
     environment.systemPackages = [
       scripts
+      tuiScript
       pkgs.jq
       pkgs.inotify-tools
     ];

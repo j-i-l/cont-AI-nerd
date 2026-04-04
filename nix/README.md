@@ -89,6 +89,10 @@ This will:
 7. Start the watcher service and commit timer
 8. Set project directory permissions (group ownership, setgid)
 
+**Note:** Project directories are mounted under `/workspace` inside the container.
+The common parent directory is stripped (e.g., `/home/alice/Projects` becomes
+`/workspace/Projects`). This avoids issues with home directory traversal.
+
 ---
 
 ## Module Options Reference
@@ -113,10 +117,32 @@ This will:
 
 ### Configure OpenCode credentials
 
+Use the host-side TUI (which has write access to credentials):
+
 ```bash
-podman exec -it cont-ai-nerd opencode-tui
+sudo cont-ai-nerd-tui
 # Then run: /connect
 ```
+
+### Access the TUI
+
+There are two ways to interact with the AI agent:
+
+**Option 1: Host-side TUI (Recommended for Authentication)**
+
+```bash
+sudo cont-ai-nerd-tui
+```
+
+This spawns a separate container with read-write access to your credentials directory, allowing `/connect` to save authentication tokens.
+
+**Option 2: Container-side TUI (Read-only)**
+
+```bash
+sudo podman exec -it cont-ai-nerd opencode-tui
+```
+
+This runs inside the main container with read-only credential access. Use this for normal coding sessions after initial setup.
 
 ### Prepare project permissions
 
@@ -132,12 +158,6 @@ sudo cont-ai-nerd-prepare-permissions ~/Projects
 
 # Or read paths from the generated config
 sudo cont-ai-nerd-prepare-permissions --from-config
-```
-
-### Access the TUI
-
-```bash
-podman exec -it cont-ai-nerd opencode-tui
 ```
 
 ---

@@ -44,7 +44,7 @@ info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 die()   { error "$@"; exit 1; }
-debug() { [[ "${VERBOSE:-false}" == "true" ]] && echo -e "${DIM}[DEBUG] $*${RESET}"; }
+debug() { [[ "${VERBOSE:-false}" == "true" ]] && echo -e "${DIM}[DEBUG] $*${RESET}" || true; }
 
 # ── Sensitive patterns ───────────────────────────────────────────────────
 # Files and directories matching these patterns will be set to mode 700

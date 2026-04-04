@@ -304,15 +304,16 @@ in {
             "${cfg.primaryHome}/.local/share/opencode" \
             "${cfg.primaryHome}/.local/share/opencode/log"; do
             mkdir -p "$dir"
-            chown ${cfg.primaryUser}:${cfg.primaryUser} "$dir"
+            chown ${cfg.primaryUser}:${cfg.agent.group} "$dir"
+            chmod 770 "$dir"
           done
 
           # Ensure auth.json exists (required for bind mount, even if empty)
           AUTH_FILE="${cfg.primaryHome}/.local/share/opencode/auth.json"
           if [ ! -f "$AUTH_FILE" ]; then
             echo '{}' > "$AUTH_FILE"
-            chown ${cfg.primaryUser}:${cfg.primaryUser} "$AUTH_FILE"
-            chmod 600 "$AUTH_FILE"
+            chown ${cfg.primaryUser}:${cfg.agent.group} "$AUTH_FILE"
+            chmod 640 "$AUTH_FILE"
           fi
         '';
         deps = [ "users" "groups" ];

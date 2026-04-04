@@ -147,8 +147,9 @@ jobs:
           echo "--- Checking valid JSON with external_directory ---"
           jq -e '.permission.external_directory' "$POLICY" > /dev/null
 
-          echo "--- Checking project path is allowed ---"
-          jq -e ".permission.external_directory[\"$HOME/Projects/**\"]" \
+          echo "--- Checking project path is allowed (container path) ---"
+          # Policy now uses container-side /workspace paths
+          jq -e '.permission.external_directory["/workspace/Projects/**"]' \
             "$POLICY" | grep -q allow
 
           echo "--- Checking ownership and mode ---"
@@ -342,6 +343,7 @@ jobs:
         run: |
           set -euo pipefail
           PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
           AGENT_UID=$(id -u agent)
           AI_GID=$(getent group ai | cut -d: -f3)
 
@@ -371,32 +373,31 @@ jobs:
           ls -la "$PROJECT"/file_*
 
           # Use podman run with the same user/group as the real service.
-          # This is more reliable than exec-ing into a potentially
-          # crash-looping container.
+          # Mount under /workspace to match production layout.
           RUN_CMD="sudo podman run --rm
             --user ${AGENT_UID}:${AI_GID}
-            -v ${PROJECT}:${PROJECT}:rw
+            -v ${PROJECT}:${WORKSPACE}:rw
             --entrypoint cat
             localhost/cont-ai-nerd:latest"
 
           echo ""
           echo "--- Testing file_660 (group rw, expect: readable) ---"
-          $RUN_CMD "$PROJECT/file_660" > /dev/null \
+          $RUN_CMD "${WORKSPACE}/file_660" > /dev/null \
             && echo "PASS: 660 readable" \
             || { echo "FAIL: 660 should be readable by group"; exit 1; }
 
           echo "--- Testing file_640 (group r, expect: readable) ---"
-          $RUN_CMD "$PROJECT/file_640" > /dev/null \
+          $RUN_CMD "${WORKSPACE}/file_640" > /dev/null \
             && echo "PASS: 640 readable" \
             || { echo "FAIL: 640 should be readable by group"; exit 1; }
 
           echo "--- Testing file_644 (other r, expect: readable) ---"
-          $RUN_CMD "$PROJECT/file_644" > /dev/null \
+          $RUN_CMD "${WORKSPACE}/file_644" > /dev/null \
             && echo "PASS: 644 readable" \
             || { echo "FAIL: 644 should be readable by other"; exit 1; }
 
           echo "--- Testing file_600 (owner only, expect: BLOCKED) ---"
-          if $RUN_CMD "$PROJECT/file_600" > /dev/null 2>&1; then
+          if $RUN_CMD "${WORKSPACE}/file_600" > /dev/null 2>&1; then
             echo "FAIL: 600 should NOT be readable by agent"
             exit 1
           else
@@ -411,16 +412,17 @@ jobs:
         run: |
           set -euo pipefail
           PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
           AGENT_UID=$(id -u agent)
           AI_GID=$(getent group ai | cut -d: -f3)
 
           echo "--- Testing write to 660 file ---"
           sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${PROJECT}:${PROJECT}:rw" \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint sh \
             localhost/cont-ai-nerd:latest \
-            -c "echo 'agent-was-here' >> '${PROJECT}/file_660'"
+            -c "echo 'agent-was-here' >> '${WORKSPACE}/file_660'"
 
           grep -q 'agent-was-here' "$PROJECT/file_660" \
             && echo "PASS: agent can write to 660" \
@@ -429,10 +431,10 @@ jobs:
           echo "--- Testing write to 600 file (expect: BLOCKED) ---"
           if sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${PROJECT}:${PROJECT}:rw" \
+            -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint sh \
             localhost/cont-ai-nerd:latest \
-            -c "echo 'should-fail' >> '${PROJECT}/file_600'" 2>/dev/null; then
+            -c "echo 'should-fail' >> '${WORKSPACE}/file_600'" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to 600"
             exit 1
           else
@@ -447,12 +449,16 @@ jobs:
         run: |
           set -euo pipefail
           PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
           AGENT_UID=$(id -u agent)
           AI_GID=$(getent group ai | cut -d: -f3)
           TEST_FILE="$PROJECT/watcher_test_file"
+          CONTAINER_TEST_FILE="${WORKSPACE}/watcher_test_file"
 
-          echo "--- Creating file as agent user ---"
-          sudo -u agent touch "$TEST_FILE"
+          echo "--- Creating file as agent user via podman exec ---"
+          # This reflects actual production behavior: agent creates files
+          # inside the container, which appear on the host via bind mount.
+          sudo podman exec cont-ai-nerd touch "$CONTAINER_TEST_FILE"
 
           echo "--- Verifying initial ownership is agent ---"
           INITIAL_UID=$(stat -c '%u' "$TEST_FILE")
@@ -494,11 +500,13 @@ jobs:
         run: |
           set -euo pipefail
           PROJECT="$HOME/Projects"
+          WORKSPACE="/workspace/Projects"
           AGENT_UID=$(id -u agent)
           TEST_DIR="$PROJECT/watcher_test_dir"
+          CONTAINER_TEST_DIR="${WORKSPACE}/watcher_test_dir"
 
-          echo "--- Creating directory as agent user ---"
-          sudo -u agent mkdir "$TEST_DIR"
+          echo "--- Creating directory as agent user via podman exec ---"
+          sudo podman exec cont-ai-nerd mkdir "$CONTAINER_TEST_DIR"
 
           echo "--- Waiting for watcher to process (polling up to 10s) ---"
           for i in $(seq 1 20); do
@@ -694,11 +702,12 @@ jobs:
           echo "PASS: readonly.txt preserved restrictive group perms (g=r)"
 
           echo "--- Verifying agent CANNOT read .env ---"
+          WORKSPACE_TEST="/workspace/perm_test"
           if sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${TEST_DIR}:${TEST_DIR}:rw" \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest "$TEST_DIR/.env" 2>/dev/null; then
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/.env" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to read .env"
             exit 1
           fi
@@ -707,9 +716,9 @@ jobs:
           echo "--- Verifying agent CANNOT read secrets/ ---"
           if sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${TEST_DIR}:${TEST_DIR}:rw" \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint ls \
-            localhost/cont-ai-nerd:latest "$TEST_DIR/secrets" 2>/dev/null; then
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/secrets" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to list secrets/"
             exit 1
           fi
@@ -718,19 +727,19 @@ jobs:
           echo "--- Verifying agent CAN read .git/HEAD (read-only) ---"
           sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${TEST_DIR}:${TEST_DIR}:rw" \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest "$TEST_DIR/.git/HEAD" > /dev/null || \
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/.git/HEAD" > /dev/null || \
             { echo "FAIL: agent should be able to read .git/HEAD"; exit 1; }
           echo "PASS: agent can read .git/HEAD"
 
           echo "--- Verifying agent CANNOT write to .git/HEAD ---"
           if sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${TEST_DIR}:${TEST_DIR}:rw" \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint sh \
             localhost/cont-ai-nerd:latest \
-            -c "echo 'tamper' >> '${TEST_DIR}/.git/HEAD'" 2>/dev/null; then
+            -c "echo 'tamper' >> '${WORKSPACE_TEST}/.git/HEAD'" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to .git/HEAD"
             exit 1
           fi
@@ -739,19 +748,19 @@ jobs:
           echo "--- Verifying agent CAN read main.py ---"
           sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${TEST_DIR}:${TEST_DIR}:rw" \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest "$TEST_DIR/main.py" > /dev/null || \
+            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/main.py" > /dev/null || \
             { echo "FAIL: agent should be able to read main.py"; exit 1; }
           echo "PASS: agent can read main.py"
 
           echo "--- Verifying agent CAN write to main.py ---"
           sudo podman run --rm \
             --user ${AGENT_UID}:${AI_GID} \
-            -v "${TEST_DIR}:${TEST_DIR}:rw" \
+            -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint sh \
             localhost/cont-ai-nerd:latest \
-            -c "echo '# comment' >> '${TEST_DIR}/main.py'" || \
+            -c "echo '# comment' >> '${WORKSPACE_TEST}/main.py'" || \
             { echo "FAIL: agent should be able to write to main.py"; exit 1; }
           echo "PASS: agent can write to main.py"
 
@@ -777,6 +786,40 @@ jobs:
 
           echo ""
           echo "PASS: idempotency"
+
+      # ── 16. Test TUI script installation ────────────────────
+      - name: "Test: cont-ai-nerd-tui script"
+        run: |
+          set -euo pipefail
+
+          echo "--- Checking TUI script is installed ---"
+          [[ -x /usr/local/bin/cont-ai-nerd-tui ]] || \
+            { echo "FAIL: /usr/local/bin/cont-ai-nerd-tui not found or not executable"; exit 1; }
+
+          echo "--- Checking TUI script is a symlink ---"
+          [[ -L /usr/local/bin/cont-ai-nerd-tui ]] || \
+            { echo "FAIL: /usr/local/bin/cont-ai-nerd-tui is not a symlink"; exit 1; }
+
+          echo "--- Checking symlink target exists ---"
+          TARGET=$(readlink -f /usr/local/bin/cont-ai-nerd-tui)
+          [[ -f "$TARGET" ]] || \
+            { echo "FAIL: symlink target $TARGET does not exist"; exit 1; }
+
+          echo "--- Testing TUI script reads config correctly ---"
+          # The script should detect the container is running and try to connect
+          # We expect it to fail because there's no actual OpenCode server, but
+          # it should get past config reading.
+          OUTPUT=$(sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+
+          # Should NOT fail with config errors
+          if echo "$OUTPUT" | grep -qi "config.*not found"; then
+            echo "FAIL: TUI script couldn't find config"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          echo "    TUI script output: $OUTPUT"
+          echo "PASS: cont-ai-nerd-tui script"
 
       # ── Diagnostics on failure ─────────────────────────────
       - name: Collect diagnostics

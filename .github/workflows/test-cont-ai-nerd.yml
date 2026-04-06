@@ -44,6 +44,39 @@ jobs:
           fi
           echo "Podman version OK"
 
+      - name: Verify Quadlet generator is available
+        run: |
+          set -euo pipefail
+          echo "--- Checking for Podman Quadlet generator ---"
+
+          # The generator must be in a path systemd scans for generators.
+          GENERATOR=""
+          for path in \
+            /usr/lib/systemd/system-generators/podman-system-generator \
+            /usr/libexec/podman/quadlet \
+            /usr/lib/podman/quadlet; do
+            if [[ -x "$path" ]]; then
+              GENERATOR="$path"
+              echo "Found generator: $path"
+              break
+            fi
+          done
+
+          if [[ -z "$GENERATOR" ]]; then
+            echo "WARNING: Podman Quadlet generator not found in expected paths"
+            echo "Searching system..."
+            find / -name '*podman*generator*' -o -name 'quadlet' 2>/dev/null | head -10 || true
+            dpkg -L podman 2>/dev/null | grep -iE 'generator|quadlet' || true
+            echo ""
+            echo "setup.sh step 8 (systemctl start) may fail without the generator."
+          fi
+
+          echo "--- systemd generator directories ---"
+          ls -la /usr/lib/systemd/system-generators/ 2>&1 | head -20 || echo "(not found)"
+
+          sudo mkdir -p /etc/containers/systemd
+          echo "Quadlet directory ready: /etc/containers/systemd/"
+
       # ── Dummy OpenCode config ──────────────────────────────
       - name: Create dummy OpenCode config and auth
         run: |
@@ -106,6 +139,36 @@ jobs:
         run: |
           # Answer 'Y' to use existing configuration
           echo "Y" | sudo -E ./scripts/setup.sh
+
+      - name: "Debug: Quadlet generator output"
+        if: always()
+        run: |
+          echo "=== Podman version ==="
+          podman --version
+
+          echo ""
+          echo "=== Rendered .container file ==="
+          sudo cat /etc/containers/systemd/cont-ai-nerd.container 2>&1 || echo "(not found)"
+
+          echo ""
+          echo "=== Run generator manually ==="
+          sudo mkdir -p /tmp/quadlet-normal /tmp/quadlet-early /tmp/quadlet-late
+          sudo /usr/lib/systemd/system-generators/podman-system-generator \
+            /tmp/quadlet-normal /tmp/quadlet-early /tmp/quadlet-late 2>&1 || true
+
+          echo ""
+          echo "=== Generator output files ==="
+          ls -laR /tmp/quadlet-normal/ 2>&1 || true
+          sudo cat /tmp/quadlet-normal/*.service 2>&1 || echo "(no service files generated)"
+
+          echo ""
+          echo "=== systemd generator cache ==="
+          sudo ls -la /run/systemd/generator/ 2>&1 || echo "(no generator cache)"
+          sudo ls -la /run/systemd/generator/*cont-ai-nerd* 2>&1 || echo "(no cont-ai-nerd in generator cache)"
+
+          echo ""
+          echo "=== systemctl cat ==="
+          systemctl cat cont-ai-nerd.service 2>&1 || echo "(unit not found by systemctl)"
 
       # ── 1. Verify identity provisioning ────────────────────
       - name: "Test: identity provisioning"

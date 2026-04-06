@@ -21,7 +21,7 @@ on:
       - "nix/**"
       - "flake.nix"
       - ".github/workflows/test-cont-ai-nerd-nix.yml"
-  workflow_dispatch:
+  # workflow_dispatch:
 
 jobs:
   test-full-nix:

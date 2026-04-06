@@ -39,8 +39,33 @@ RUN set -e; \
 # Create agent user with a group whose GID matches the primary user's group
 # on the host. This allows the agent to read/write files via group permissions
 # without requiring a dedicated shared group.
+#
+# Debug: log existing groups before attempting creation so CI reveals
+# any GID or name collisions in the base image.
+RUN echo "=== Pre-groupadd state ===" && \
+    echo "Requested AGENT_GID=${AGENT_GID} AGENT_GROUP_NAME=${AGENT_GROUP_NAME}" && \
+    echo "--- Existing group by GID ---" && \
+    (getent group "${AGENT_GID}" || echo "(GID ${AGENT_GID} not found)") && \
+    echo "--- Existing group by name ---" && \
+    (getent group "${AGENT_GROUP_NAME}" || echo "(name ${AGENT_GROUP_NAME} not found)") && \
+    echo "--- /etc/group (tail) ---" && \
+    tail -20 /etc/group && \
+    echo "=== End pre-groupadd state ==="
+
 RUN groupadd -g "${AGENT_GID}" "${AGENT_GROUP_NAME}" && \
     useradd -u "${AGENT_UID}" -g "${AGENT_GROUP_NAME}" -m -s /bin/bash agent
+
+# Build-time assertion: fail fast if the agent's GID doesn't match what
+# was requested.  This catches silent groupadd failures (e.g. GID/name
+# collision in the base image).
+RUN ACTUAL_GID=$(id -g agent) && \
+    echo "Agent identity: $(id agent)" && \
+    if [ "$ACTUAL_GID" != "${AGENT_GID}" ]; then \
+      echo "FATAL: agent GID=$ACTUAL_GID, expected=${AGENT_GID}"; \
+      echo "--- /etc/group ---"; cat /etc/group; \
+      exit 1; \
+    fi && \
+    echo "OK: agent GID=$ACTUAL_GID matches requested AGENT_GID=${AGENT_GID}"
 
 # Persistent tool directory — survives via overlay commits.
 # The agent can install linters, language servers, etc. here.

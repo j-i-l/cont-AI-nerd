@@ -63,7 +63,11 @@ umask 002
 if [ "$(id -u)" = "0" ]; then
   AGENT_UID="$(id -u agent 2>/dev/null || echo 1001)"
   AGENT_GID="$(id -g agent 2>/dev/null || echo 1001)"
+  AGENT_HOME="$(eval echo "~agent" 2>/dev/null || echo /home/agent)"
   exec setpriv --reuid="$AGENT_UID" --regid="$AGENT_GID" --init-groups \
+    env HOME="$AGENT_HOME" \
+        XDG_CONFIG_HOME="$AGENT_HOME/.config" \
+        XDG_DATA_HOME="$AGENT_HOME/.local/share" \
     opencode "$@"
 else
   exec opencode "$@"

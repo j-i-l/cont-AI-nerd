@@ -1031,10 +1031,13 @@ jobs:
             { echo "FAIL: symlink target $TARGET does not exist"; exit 1; }
 
           echo "--- Testing TUI script reads config correctly ---"
-          # The script should detect the container is running and try to connect
+          # The script should detect the container is running and try to connect.
           # We expect it to fail because there's no actual OpenCode server, but
           # it should get past config reading.
-          OUTPUT=$(sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+          # Pipe /dev/null to close stdin immediately so podman run --rm -it
+          # (which allocates a pseudo-TTY) doesn't block indefinitely in CI.
+          # timeout 10 kills it if podman somehow still hangs.
+          OUTPUT=$(sudo -E timeout 10 /usr/local/bin/cont-ai-nerd-tui </dev/null 2>&1 || true)
 
           # Should NOT fail with config errors
           if echo "$OUTPUT" | grep -qi "config.*not found"; then
@@ -1102,7 +1105,7 @@ jobs:
           echo "    PASS: ~/.config/opencode owner=$OWNER mode=$MODE"
 
           echo "--- Running TUI after dir recovery (expect: no mount errors) ---"
-          OUTPUT=$(sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+          OUTPUT=$(sudo -E timeout 10 /usr/local/bin/cont-ai-nerd-tui </dev/null 2>&1 || true)
           echo "    TUI output: $OUTPUT"
 
           if echo "$OUTPUT" | grep -qi "No such file or directory"; then

@@ -39,19 +39,6 @@ RUN set -e; \
 # Create agent user with a group whose GID matches the primary user's group
 # on the host. This allows the agent to read/write files via group permissions
 # without requiring a dedicated shared group.
-#
-# Debug: log existing groups before attempting creation so CI reveals
-# any GID or name collisions in the base image.
-RUN echo "=== Pre-groupadd state ===" && \
-    echo "Requested AGENT_GID=${AGENT_GID} AGENT_GROUP_NAME=${AGENT_GROUP_NAME}" && \
-    echo "--- Existing group by GID ---" && \
-    (getent group "${AGENT_GID}" || echo "(GID ${AGENT_GID} not found)") && \
-    echo "--- Existing group by name ---" && \
-    (getent group "${AGENT_GROUP_NAME}" || echo "(name ${AGENT_GROUP_NAME} not found)") && \
-    echo "--- /etc/group (tail) ---" && \
-    tail -20 /etc/group && \
-    echo "=== End pre-groupadd state ==="
-
 RUN groupadd -g "${AGENT_GID}" "${AGENT_GROUP_NAME}" && \
     useradd -u "${AGENT_UID}" -g "${AGENT_GROUP_NAME}" -m -s /bin/bash agent
 

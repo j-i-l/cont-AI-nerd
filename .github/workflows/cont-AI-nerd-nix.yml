@@ -161,64 +161,19 @@ jobs:
           # Answer 'Y' to use existing configuration
           echo "Y" | sudo -E ./scripts/setup.sh
 
-      - name: "Debug: GID mapping in container"
-        if: always()
+      # ── Setup: simulate user granting agent write access ───
+      - name: "Setup: create group-writable project directories"
         run: |
-          PRIMARY_GID=$(id -g "$USER")
-          echo "=== Host side ==="
-          echo "USER=$USER"
-          id "$USER"
-          echo "PRIMARY_GID=$PRIMARY_GID"
-
-          echo ""
-          echo "=== Container: id agent ==="
-          sudo podman run --rm --entrypoint id \
-            localhost/cont-ai-nerd:latest agent 2>&1 || echo "(failed)"
-
-          echo ""
-          echo "=== Container: getent group by GID ==="
-          sudo podman run --rm --entrypoint getent \
-            localhost/cont-ai-nerd:latest group "$PRIMARY_GID" 2>&1 || echo "(not found)"
-
-          echo ""
-          echo "=== Container: /etc/group ==="
-          sudo podman run --rm --entrypoint cat \
-            localhost/cont-ai-nerd:latest /etc/group 2>&1 || echo "(failed)"
-
-          echo ""
-          echo "=== Container: /etc/passwd (agent) ==="
-          sudo podman run --rm --entrypoint sh \
-            localhost/cont-ai-nerd:latest -c "grep agent /etc/passwd" 2>&1 || echo "(not found)"
-
-      - name: "Debug: Quadlet generator output"
-        if: always()
-        run: |
-          echo "=== Podman version ==="
-          podman --version
-
-          echo ""
-          echo "=== Rendered .container file ==="
-          sudo cat /etc/containers/systemd/cont-ai-nerd.container 2>&1 || echo "(not found)"
-
-          echo ""
-          echo "=== Run generator manually ==="
-          sudo mkdir -p /tmp/quadlet-normal /tmp/quadlet-early /tmp/quadlet-late
-          sudo /usr/lib/systemd/system-generators/podman-system-generator \
-            /tmp/quadlet-normal /tmp/quadlet-early /tmp/quadlet-late 2>&1 || true
-
-          echo ""
-          echo "=== Generator output files ==="
-          ls -laR /tmp/quadlet-normal/ 2>&1 || true
-          sudo cat /tmp/quadlet-normal/*.service 2>&1 || echo "(no service files generated)"
-
-          echo ""
-          echo "=== systemd generator cache ==="
-          sudo ls -la /run/systemd/generator/ 2>&1 || echo "(no generator cache)"
-          sudo ls -la /run/systemd/generator/*cont-ai-nerd* 2>&1 || echo "(no cont-ai-nerd in generator cache)"
-
-          echo ""
-          echo "=== systemctl cat ==="
-          systemctl cat cont-ai-nerd.service 2>&1 || echo "(unit not found by systemctl)"
+          # In production, the user explicitly opts in to agent write access
+          # per-directory. In CI, we simulate this by creating subdirectories
+          # with mode 770 inside the project roots — matching what a real user
+          # would do for projects they want the agent to modify.
+          mkdir -p "$HOME/Projects/myproject" "$HOME/work/mywork"
+          chmod 770 "$HOME/Projects/myproject" "$HOME/work/mywork"
+          echo "--- Parent directories (should be 755 / g+x only) ---"
+          ls -ld "$HOME/Projects" "$HOME/work"
+          echo "--- Project directories (should be 770 / g+rwx) ---"
+          ls -ld "$HOME/Projects/myproject" "$HOME/work/mywork"
 
       # ── 1. Verify identity provisioning ────────────────────
       - name: "Test: identity provisioning"
@@ -685,8 +640,8 @@ jobs:
       - name: "Test: inotify watcher (file ownership reassignment)"
         run: |
           set -euo pipefail
-          PROJECT="$HOME/Projects"
-          WORKSPACE="/workspace/Projects"
+          PROJECT="$HOME/Projects/myproject"
+          WORKSPACE="/workspace/Projects/myproject"
           TEST_FILE="$PROJECT/watcher_test_file"
           CONTAINER_TEST_FILE="${WORKSPACE}/watcher_test_file"
           EXPECTED_GROUP="$(id -gn)"
@@ -740,8 +695,8 @@ jobs:
       - name: "Test: watcher sets setgid on new directories"
         run: |
           set -euo pipefail
-          PROJECT="$HOME/Projects"
-          WORKSPACE="/workspace/Projects"
+          PROJECT="$HOME/Projects/myproject"
+          WORKSPACE="/workspace/Projects/myproject"
           TEST_DIR="$PROJECT/watcher_test_dir"
           CONTAINER_TEST_DIR="${WORKSPACE}/watcher_test_dir"
           EXPECTED_GROUP="$(id -gn)"
@@ -1247,33 +1202,33 @@ jobs:
 
           echo "--- Running whoami with host-side Projects path as cwd ---"
           RESULT=$(sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            --workdir "$HOME/Projects" \
+            --workdir "$HOME/Projects/myproject" \
             cont-ai-nerd /usr/bin/bash -c 'whoami')
           [[ "$RESULT" == "agent" ]] || \
             { echo "FAIL: whoami returned '$RESULT', expected 'agent'"; exit 1; }
-          echo "PASS: whoami works with host-side cwd (Projects)"
+          echo "PASS: whoami works with host-side cwd (Projects/myproject)"
 
           echo "--- Running whoami with host-side work path as cwd ---"
           RESULT=$(sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            --workdir "$HOME/work" \
+            --workdir "$HOME/work/mywork" \
             cont-ai-nerd /usr/bin/bash -c 'whoami')
           [[ "$RESULT" == "agent" ]] || \
             { echo "FAIL: whoami returned '$RESULT', expected 'agent'"; exit 1; }
-          echo "PASS: whoami works with host-side cwd (work)"
+          echo "PASS: whoami works with host-side cwd (work/mywork)"
 
           echo "--- File operations via host-side path ---"
           sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            cont-ai-nerd /usr/bin/bash -c "echo 'spawn-test' > '$HOME/Projects/spawn_test_file'"
-          [[ -f "$HOME/Projects/spawn_test_file" ]] || \
+            cont-ai-nerd /usr/bin/bash -c "echo 'spawn-test' > '$HOME/Projects/myproject/spawn_test_file'"
+          [[ -f "$HOME/Projects/myproject/spawn_test_file" ]] || \
             { echo "FAIL: file not created on host"; exit 1; }
-          grep -q 'spawn-test' "$HOME/Projects/spawn_test_file" || \
+          grep -q 'spawn-test' "$HOME/Projects/myproject/spawn_test_file" || \
             { echo "FAIL: file content mismatch"; exit 1; }
-          rm -f "$HOME/Projects/spawn_test_file"
+          rm -f "$HOME/Projects/myproject/spawn_test_file"
           echo "PASS: file creation via host-side path"
 
           echo "--- ls via host-side path ---"
           sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            --workdir "$HOME/Projects" \
+            --workdir "$HOME/Projects/myproject" \
             cont-ai-nerd /usr/bin/bash -c 'ls -la' > /dev/null
           echo "PASS: ls works with host-side cwd"
 
@@ -1284,12 +1239,12 @@ jobs:
       - name: "Test: inotify watcher works through symlinked path"
         run: |
           set -euo pipefail
-          PROJECT="$HOME/Projects"
+          PROJECT="$HOME/Projects/myproject"
           TEST_FILE="inotify_symlink_test"
           EXPECTED_GROUP="$(id -gn)"
 
           echo "--- Creating file via symlinked host path inside container ---"
-          sudo podman exec --user agent cont-ai-nerd touch "$HOME/Projects/${TEST_FILE}"
+          sudo podman exec --user agent cont-ai-nerd touch "$HOME/Projects/myproject/${TEST_FILE}"
 
           echo "--- Waiting for watcher to process (polling up to 10s) ---"
           for i in $(seq 1 20); do

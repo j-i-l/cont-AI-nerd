@@ -169,8 +169,10 @@ agent creates, since you share the same group.
 The `cont-ai-nerd-watcher` systemd service monitors project directories via
 inotify. When the agent creates or modifies files (inside the container via
 bind mounts), the watcher reassigns ownership from `agent` to the primary
-user. The group and permissions are left unchanged — they're already correct
-because the agent shares your group and uses `umask 002`.
+user and defensively ensures group-write permission (`g+w` on files, `g+ws`
+on directories). This makes the system robust regardless of the umask that
+was active when the file was created (e.g. the entrypoint sets `umask 002`,
+but `podman exec` inherits the default `022`).
 
 ### `.git/` Directories
 

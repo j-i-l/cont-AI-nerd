@@ -5,8 +5,10 @@
 # user back to the primary (human) user.
 #
 # Since the agent shares the primary user's GID (mapped inside the container),
-# only the owner needs to be changed. The group is already correct and the
-# agent's umask (002) ensures files are group-writable by default.
+# only the owner needs to be changed — the group is already correct.
+# The watcher also defensively ensures group-write (and setgid on directories)
+# so that permissions are correct regardless of how the file was created
+# (e.g. via entrypoint with umask 002, or via podman exec which inherits 022).
 #
 # Usage: cont-ai-nerd-watcher.sh <primary_user> <agent_user> <dir> [<dir>...]
 # ---------------------------------------------------------------------------
@@ -42,8 +44,13 @@ while IFS= read -r filepath; do
   file_uid=$(stat -c '%u' "$filepath" 2>/dev/null) || continue
 
   if [[ "$file_uid" == "$AGENT_UID" ]]; then
-    # Only change the owner — the group is already correct (primary user's
-    # group via mapped GID) and permissions are set by the agent's umask.
     chown "$PRIMARY_UID" "$filepath" 2>/dev/null || true
+    # Defensively ensure group-write (and setgid on directories) regardless
+    # of the umask that was active when the file was created.
+    if [[ -d "$filepath" ]]; then
+      chmod g+ws "$filepath" 2>/dev/null || true
+    else
+      chmod g+w "$filepath" 2>/dev/null || true
+    fi
   fi
 done

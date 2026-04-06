@@ -1046,6 +1046,74 @@ jobs:
           echo "    TUI script output: $OUTPUT"
           echo "PASS: cont-ai-nerd-tui script"
 
+      # ── 16a. Test TUI handles missing OpenCode dirs ─────────
+      - name: "Test: TUI handles missing OpenCode dirs"
+        run: |
+          set -euo pipefail
+
+          echo "--- Simulating partially-failed activation (remove OpenCode dirs) ---"
+          # This reproduces the production scenario where nixos-rebuild aborted
+          # before the cont-ai-nerd-dirs activation script could create these dirs.
+          # On the non-Nix path the guard lives in setup.sh step 4, so we verify
+          # that re-running setup.sh re-creates everything correctly.
+          sudo rm -rf "$HOME/.local/share/opencode" "$HOME/.config/opencode"
+
+          echo "--- Verifying dirs are gone ---"
+          [[ ! -d "$HOME/.local/share/opencode" ]] || \
+            { echo "FAIL: expected ~/.local/share/opencode to be absent"; exit 1; }
+          [[ ! -d "$HOME/.config/opencode" ]] || \
+            { echo "FAIL: expected ~/.config/opencode to be absent"; exit 1; }
+          echo "    Dirs confirmed absent"
+
+          echo "--- Re-running setup.sh (should re-create the missing dirs) ---"
+          echo "Y" | sudo -E ./scripts/setup.sh
+
+          echo "--- Verifying ~/.local/share/opencode was re-created ---"
+          [[ -d "$HOME/.local/share/opencode" ]] || \
+            { echo "FAIL: ~/.local/share/opencode not re-created"; exit 1; }
+          OWNER=$(stat -c '%U' "$HOME/.local/share/opencode")
+          MODE=$(stat -c '%a' "$HOME/.local/share/opencode")
+          [[ "$OWNER" == "$USER" ]] || \
+            { echo "FAIL: ~/.local/share/opencode owner=$OWNER expected=$USER"; exit 1; }
+          [[ "$MODE" == "750" ]] || \
+            { echo "FAIL: ~/.local/share/opencode mode=$MODE expected=750"; exit 1; }
+          echo "    PASS: ~/.local/share/opencode owner=$OWNER mode=$MODE"
+
+          echo "--- Verifying ~/.local/share/opencode/auth.json was re-created ---"
+          [[ -f "$HOME/.local/share/opencode/auth.json" ]] || \
+            { echo "FAIL: auth.json not re-created"; exit 1; }
+          OWNER=$(stat -c '%U' "$HOME/.local/share/opencode/auth.json")
+          MODE=$(stat -c '%a' "$HOME/.local/share/opencode/auth.json")
+          [[ "$OWNER" == "$USER" ]] || \
+            { echo "FAIL: auth.json owner=$OWNER expected=$USER"; exit 1; }
+          [[ "$MODE" == "640" ]] || \
+            { echo "FAIL: auth.json mode=$MODE expected=640"; exit 1; }
+          echo "    PASS: auth.json owner=$OWNER mode=$MODE"
+
+          echo "--- Verifying ~/.config/opencode was re-created ---"
+          [[ -d "$HOME/.config/opencode" ]] || \
+            { echo "FAIL: ~/.config/opencode not re-created"; exit 1; }
+          OWNER=$(stat -c '%U' "$HOME/.config/opencode")
+          MODE=$(stat -c '%a' "$HOME/.config/opencode")
+          [[ "$OWNER" == "$USER" ]] || \
+            { echo "FAIL: ~/.config/opencode owner=$OWNER expected=$USER"; exit 1; }
+          [[ "$MODE" == "750" ]] || \
+            { echo "FAIL: ~/.config/opencode mode=$MODE expected=750"; exit 1; }
+          echo "    PASS: ~/.config/opencode owner=$OWNER mode=$MODE"
+
+          echo "--- Running TUI after dir recovery (expect: no mount errors) ---"
+          OUTPUT=$(sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+          echo "    TUI output: $OUTPUT"
+
+          if echo "$OUTPUT" | grep -qi "No such file or directory"; then
+            echo "FAIL: TUI failed with a missing-file error after dir recovery"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          echo ""
+          echo "PASS: TUI handles missing OpenCode dirs"
+
       # ── 17. Test path_map in config.json ────────────────────
       - name: "Test: path_map in config.json"
         run: |

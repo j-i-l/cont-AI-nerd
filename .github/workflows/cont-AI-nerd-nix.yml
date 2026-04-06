@@ -1088,6 +1088,112 @@ jobs:
           echo "    TUI script output: $OUTPUT"
           echo "PASS: cont-ai-nerd-tui script"
 
+      # ── 16a. Test Nix TUI handles missing OpenCode dirs ─────
+      - name: "Test: Nix TUI handles missing OpenCode dirs"
+        run: |
+          set -euo pipefail
+
+          echo "--- Simulating partially-failed nixos-rebuild activation ---"
+          # On NixOS, the cont-ai-nerd-image activation step (podman build) runs
+          # before cont-ai-nerd-dirs.  If the build aborted (e.g. groupadd exit 9),
+          # cont-ai-nerd-dirs never ran and ~/.local/share/opencode never existed.
+          # The Nix tuiScript has a defensive guard that creates these dirs when
+          # running as root (sudo cont-ai-nerd-tui).  This test validates that guard.
+          sudo rm -rf "$HOME/.local/share/opencode" "$HOME/.config/opencode"
+
+          echo "--- Verifying dirs are gone ---"
+          [[ ! -d "$HOME/.local/share/opencode" ]] || \
+            { echo "FAIL: expected ~/.local/share/opencode to be absent"; exit 1; }
+          [[ ! -d "$HOME/.config/opencode" ]] || \
+            { echo "FAIL: expected ~/.config/opencode to be absent"; exit 1; }
+          echo "    Dirs confirmed absent"
+
+          echo "--- Running Nix TUI (as root, dirs should be created by tuiScript guard) ---"
+          # tuiScript creates the dirs before reaching `podman run`, so even though
+          # podman run will fail (no real OpenCode server), the dirs must exist.
+          OUTPUT=$(sudo -E /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+          echo "    TUI output: $OUTPUT"
+
+          echo "--- Verifying ~/.local/share/opencode was created by TUI guard ---"
+          [[ -d "$HOME/.local/share/opencode" ]] || \
+            { echo "FAIL: ~/.local/share/opencode not created by TUI guard"; exit 1; }
+          OWNER=$(stat -c '%U' "$HOME/.local/share/opencode")
+          MODE=$(stat -c '%a' "$HOME/.local/share/opencode")
+          [[ "$OWNER" == "$USER" ]] || \
+            { echo "FAIL: ~/.local/share/opencode owner=$OWNER expected=$USER"; exit 1; }
+          [[ "$MODE" == "750" ]] || \
+            { echo "FAIL: ~/.local/share/opencode mode=$MODE expected=750"; exit 1; }
+          echo "    PASS: ~/.local/share/opencode owner=$OWNER mode=$MODE"
+
+          echo "--- Verifying auth.json was created by TUI guard ---"
+          [[ -f "$HOME/.local/share/opencode/auth.json" ]] || \
+            { echo "FAIL: auth.json not created by TUI guard"; exit 1; }
+          OWNER=$(stat -c '%U' "$HOME/.local/share/opencode/auth.json")
+          MODE=$(stat -c '%a' "$HOME/.local/share/opencode/auth.json")
+          [[ "$OWNER" == "$USER" ]] || \
+            { echo "FAIL: auth.json owner=$OWNER expected=$USER"; exit 1; }
+          [[ "$MODE" == "640" ]] || \
+            { echo "FAIL: auth.json mode=$MODE expected=640"; exit 1; }
+          echo "    PASS: auth.json owner=$OWNER mode=$MODE"
+
+          echo "--- Verifying ~/.config/opencode was created by TUI guard ---"
+          [[ -d "$HOME/.config/opencode" ]] || \
+            { echo "FAIL: ~/.config/opencode not created by TUI guard"; exit 1; }
+          OWNER=$(stat -c '%U' "$HOME/.config/opencode")
+          MODE=$(stat -c '%a' "$HOME/.config/opencode")
+          [[ "$OWNER" == "$USER" ]] || \
+            { echo "FAIL: ~/.config/opencode owner=$OWNER expected=$USER"; exit 1; }
+          [[ "$MODE" == "750" ]] || \
+            { echo "FAIL: ~/.config/opencode mode=$MODE expected=750"; exit 1; }
+          echo "    PASS: ~/.config/opencode owner=$OWNER mode=$MODE"
+
+          echo "--- TUI reached past the guard (no mount errors) ---"
+          if echo "$OUTPUT" | grep -qi "No such file or directory"; then
+            echo "FAIL: TUI emitted missing-file error — guard did not run before podman"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          echo ""
+          echo "PASS: Nix TUI handles missing OpenCode dirs"
+
+      # ── 16b. Test Nix TUI service check works without sudo ──
+      - name: "Test: Nix TUI service check works without sudo (Bug 2)"
+        run: |
+          set -euo pipefail
+
+          # Bug 2: the old tuiScript used `podman ps` which only sees rootless
+          # containers.  The rootful container managed by systemd/Quadlet is
+          # invisible without root, so `podman ps` always reported "not running"
+          # for unprivileged users.  The fix uses `systemctl is-active` instead,
+          # which is readable by any user.
+          #
+          # This test runs the Nix TUI as the unprivileged runner user (no sudo).
+          # It should pass the service-running check (systemctl is-active succeeds
+          # because the container service is running from earlier tests), then fail
+          # at `podman run` because accessing the rootful image store requires root.
+          # The critical assertion is that it does NOT emit "container is not running".
+
+          echo "--- Verifying cont-ai-nerd.service is active (rootful) ---"
+          systemctl is-active cont-ai-nerd.service || \
+            { echo "SKIP: cont-ai-nerd.service is not active; skipping test"; exit 0; }
+
+          echo "--- Running TUI as unprivileged user (no sudo) ---"
+          # Run as the current (unprivileged) runner user without sudo.
+          # Expected: passes systemctl check, fails at podman run (permission denied
+          # or image not found in rootless store).  Must NOT say "container is not running".
+          OUTPUT=$(sudo -u "$USER" /usr/local/bin/cont-ai-nerd-tui 2>&1 || true)
+          echo "    TUI output: $OUTPUT"
+
+          if echo "$OUTPUT" | grep -qi "container is not running"; then
+            echo "FAIL: TUI reported 'container is not running' for unprivileged user"
+            echo "      This means systemctl is-active check is broken (Bug 2 regression)"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          echo "PASS: TUI service check works without sudo (Bug 2)"
+
       # ── 17. Test path_map in config.json ────────────────────
       - name: "Test: path_map in config.json"
         run: |

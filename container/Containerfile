@@ -39,11 +39,29 @@ RUN set -e; \
 # Create agent user with a group whose GID matches the primary user's group
 # on the host. This allows the agent to read/write files via group permissions
 # without requiring a dedicated shared group.
-RUN groupadd -g "${AGENT_GID}" "${AGENT_GROUP_NAME}" && \
+#
+# The base image (ubuntu:24.04) already ships several well-known groups
+# (e.g. "users" GID 100, "nogroup" GID 65534). We handle four cases:
+#   1. Group name exists with the correct GID  -> nothing to do (skip groupadd)
+#   2. Group name exists with a different GID  -> fix GID via groupmod
+#   3. GID exists under a different name       -> rename that group via groupmod
+#   4. Neither name nor GID exists             -> create fresh via groupadd
+RUN set -e; \
+    if getent group "${AGENT_GROUP_NAME}" >/dev/null 2>&1; then \
+      EXISTING_GID=$(getent group "${AGENT_GROUP_NAME}" | cut -d: -f3); \
+      if [ "$EXISTING_GID" != "${AGENT_GID}" ]; then \
+        groupmod -g "${AGENT_GID}" "${AGENT_GROUP_NAME}"; \
+      fi; \
+    elif getent group "${AGENT_GID}" >/dev/null 2>&1; then \
+      OLD_NAME=$(getent group "${AGENT_GID}" | cut -d: -f1); \
+      groupmod -n "${AGENT_GROUP_NAME}" "$OLD_NAME"; \
+    else \
+      groupadd -g "${AGENT_GID}" "${AGENT_GROUP_NAME}"; \
+    fi && \
     useradd -u "${AGENT_UID}" -g "${AGENT_GROUP_NAME}" -m -s /bin/bash agent
 
 # Build-time assertion: fail fast if the agent's GID doesn't match what
-# was requested.  This catches silent groupadd failures (e.g. GID/name
+# was requested.  This catches silent groupmod/groupadd failures (e.g. GID/name
 # collision in the base image).
 RUN ACTUAL_GID=$(id -g agent) && \
     echo "Agent identity: $(id agent)" && \

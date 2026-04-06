@@ -45,7 +45,7 @@ info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 die()   { error "$@"; exit 1; }
-debug() { [[ "${VERBOSE:-false}" == "true" ]] && echo -e "${DIM}[DEBUG] $*${RESET}" || true; }
+debug() { if [[ "${VERBOSE:-false}" == "true" ]]; then echo -e "${DIM}[DEBUG] $*${RESET}"; fi; }
 
 # ── Sensitive patterns ───────────────────────────────────────────────────
 # Files and directories matching these patterns can optionally be locked

@@ -51,7 +51,10 @@ if ! PRIMARY_GID=$(id -g "$PRIMARY_USER" 2>/dev/null); then
 fi
 
 # ── Check that the main container is running ─────────────────────────────
-if ! podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
+# Use systemctl is-active rather than `podman ps` because the container is
+# managed as a rootful service; an unprivileged `podman ps` only sees the
+# rootless namespace and would always report the container as not running.
+if ! systemctl is-active --quiet cont-ai-nerd.service; then
   echo "Error: cont-ai-nerd container is not running." >&2
   echo "Start it with: systemctl start cont-ai-nerd" >&2
   exit 1

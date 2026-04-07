@@ -74,13 +74,13 @@ cont[AI]*nerd* creates a sandboxed environment where an AI coding agent (OpenCod
 │           │                        │                        │           │
 │           ▼                        ▼                        ▼           │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │           /home/alice/Projects (example)                          │   │
+│  │           /home/alice/Projects (example)                         │   │
 │  │                                                                  │   │
 │  │   - Group: primary user's group (agent shares it)                │   │
-│  │   - Directories: g+x (traverse)                                   │   │
+│  │   - Directories: g+x (traverse)                                  │   │
 │  │   - Files: g+r (read), add g+w for write                         │   │
 │  │   - Sensitive files (.env, secrets/): mode 700 (agent blocked)   │   │
-│  │   - .git/: read-only for group                                    │   │
+│  │   - .git/: read-only for group                                   │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                    │                                    │
 │                                    │ bind mount                         │
@@ -99,11 +99,13 @@ cont[AI]*nerd* creates a sandboxed environment where an AI coding agent (OpenCod
 │  │  │                                                            │  │   │
 │  │  └────────────────────────────────────────────────────────────┘  │   │
 │  │                                                                  │   │
-│  │  Mounts (paths are examples, configured via config.json):        │   │
-│  │    - /home/alice/Projects → /workspace/Projects (rw)             │   │
+│  │  Pre-defined Mounts                                              │   │
 │  │    - ~/.config/opencode → /home/agent/.config/opencode (ro)      │   │
 │  │    - ~/.local/share/opencode → /home/agent/.local/share (ro)     │   │
 │  │    - ~/.config/cont-ai-nerd/config.json → /etc/cont-ai-nerd/ (ro)│   │
+│  │                                                                  │   │
+│  │  Mounts (paths are examples, configured via config.json):        │   │
+│  │    - /home/alice/Projects → /workspace/Projects (rw)             │   │
 │  │                                                                  │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                         │

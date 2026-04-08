@@ -69,6 +69,7 @@ if [ "$(id -u)" = "0" ]; then
     env HOME="$AGENT_HOME" \
         XDG_CONFIG_HOME="$AGENT_HOME/.config" \
         XDG_DATA_HOME="$AGENT_HOME/.local/share" \
+        XDG_STATE_HOME="$AGENT_HOME/.local/state" \
     opencode "$@"
 else
   exec opencode "$@"

@@ -107,8 +107,8 @@ let
     # OpenCode global configuration (read-only)
     Volume=${cfg.primaryHome}/.config/opencode:/home/agent/.config/opencode:ro
 
-    # OpenCode auth credentials only (read-only) — the container creates its own log dir
-    Volume=${cfg.primaryHome}/.local/share/opencode/auth.json:/home/agent/.local/share/opencode/auth.json:ro
+    # OpenCode data directory (read-only) — includes auth.json, logs, etc.
+    Volume=${cfg.primaryHome}/.local/share/opencode:/home/agent/.local/share/opencode:ro
 
     # ---------- Environment ----------
     Environment=OPENCODE_CONFIG=/etc/cont-ai-nerd/opencode.json
@@ -166,7 +166,8 @@ let
     for dir in \
       "${cfg.primaryHome}/.config/opencode" \
       "${cfg.primaryHome}/.local/share/opencode" \
-      "${cfg.primaryHome}/.local/share/opencode/log"; do
+      "${cfg.primaryHome}/.local/share/opencode/log" \
+      "${cfg.primaryHome}/.local/state/opencode"; do
       if [[ ! -d "$dir" ]]; then
         mkdir -p "$dir"
         chown ${cfg.primaryUser}: "$dir"
@@ -180,16 +181,28 @@ let
       chmod 640 "$AUTH_FILE"
     fi
 
-    exec ${pkgs.podman}/bin/podman run --rm -it \
+    # Ensure the state directory exists on the host (for model.json persistence)
+    mkdir -p "${cfg.primaryHome}/.local/state/opencode"
+    chown ${cfg.primaryUser}: "${cfg.primaryHome}/.local/state/opencode"
+    chmod 770 "${cfg.primaryHome}/.local/state/opencode"
+
+    ${pkgs.podman}/bin/podman run --rm -it \
       --name cont-ai-nerd-tui-$$ \
       --user "''${AGENT_UID}:''${PRIMARY_GID}" \
       --network host \
       -v "${cfg.primaryHome}/.local/share/opencode:/home/agent/.local/share/opencode:rw" \
+      -v "${cfg.primaryHome}/.local/state/opencode:/home/agent/.local/state/opencode:rw" \
       -v "${cfg.primaryHome}/.config/opencode:/home/agent/.config/opencode:ro" \
       -v "${cfg.primaryHome}/.config/cont-ai-nerd:/etc/cont-ai-nerd:ro" \
       --entrypoint opencode \
       localhost/cont-ai-nerd:latest \
       attach "http://''${HOST}:''${PORT}" "$@"
+
+    # Restart the headless server to pick up any credential changes
+    echo ""
+    echo "Restarting cont-ai-nerd to pick up any credential changes..."
+    systemctl restart cont-ai-nerd.service
+    echo "Done."
   '';
 
 in {
@@ -323,17 +336,18 @@ in {
           chown ${cfg.primaryUser}: "$CONFIG_DIR/opencode.json"
           chmod 640 "$CONFIG_DIR/opencode.json"
 
-          # OpenCode config & data directories
+          # OpenCode config, data & state directories
           for dir in \
             "${cfg.primaryHome}/.config/opencode" \
             "${cfg.primaryHome}/.local/share/opencode" \
-            "${cfg.primaryHome}/.local/share/opencode/log"; do
+            "${cfg.primaryHome}/.local/share/opencode/log" \
+            "${cfg.primaryHome}/.local/state/opencode"; do
             mkdir -p "$dir"
             chown ${cfg.primaryUser}: "$dir"
             chmod 770 "$dir"
           done
 
-          # Ensure auth.json exists (required for bind mount, even if empty)
+          # Ensure auth.json exists (OpenCode expects it, even if empty)
           AUTH_FILE="${cfg.primaryHome}/.local/share/opencode/auth.json"
           if [ ! -f "$AUTH_FILE" ]; then
             echo '{}' > "$AUTH_FILE"

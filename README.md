@@ -311,7 +311,7 @@ Use this when you need to run `/connect` to authenticate with an LLM provider:
 sudo cont-ai-nerd-tui
 ```
 
-This spawns a separate container with read-write access to your credentials directory (`~/.local/share/opencode`), allowing `/connect` to save authentication tokens.
+This spawns a separate container with read-write access to your credentials directory (`~/.local/share/opencode`) and model state directory (`~/.local/state/opencode`), allowing `/connect` to save authentication tokens and model preferences. When you exit the TUI, the headless server is automatically restarted to pick up any credential changes.
 
 #### Option 2: Container-side TUI (Read-only)
 
@@ -621,7 +621,7 @@ To expose the server to other machines (not recommended), change `host` to `0.0.
 
 ### Credential Storage
 
-OpenCode credentials are stored in `~/.local/share/opencode/auth.json` on the host and mounted read-only into the container. The container cannot modify these credentials.
+OpenCode credentials are stored in `~/.local/share/opencode/auth.json` on the host. The entire `~/.local/share/opencode/` directory is mounted read-only into the main container. The host-side TUI (`cont-ai-nerd-tui`) mounts it read-write so `/connect` can save credentials, and automatically restarts the headless server on exit to pick up changes.
 
 ---
 

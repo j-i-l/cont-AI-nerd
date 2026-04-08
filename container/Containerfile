@@ -80,10 +80,11 @@ ENV PATH="/opt/tools/bin:${PATH}"
 # Config directory for the cont-ai-nerd policy file.
 RUN mkdir -p /etc/cont-ai-nerd && chown agent:"${AGENT_GROUP_NAME}" /etc/cont-ai-nerd
 
-# OpenCode state directory (needed for runtime state like sessions).
-RUN mkdir -p /home/agent/.local/state && chown agent:"${AGENT_GROUP_NAME}" /home/agent/.local/state
+# OpenCode state directory (needed for runtime state like sessions and model preferences).
+RUN mkdir -p /home/agent/.local/state/opencode && \
+    chown -R agent:"${AGENT_GROUP_NAME}" /home/agent/.local/state
 
-# OpenCode data directories (logs, etc.) — auth.json is bind-mounted read-only.
+# OpenCode data directories (logs, auth, etc.) — bind-mounted from host at runtime.
 RUN mkdir -p /home/agent/.local/share/opencode/log && \
     chown -R agent:"${AGENT_GROUP_NAME}" /home/agent/.local/share/opencode
 

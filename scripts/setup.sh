@@ -341,7 +341,8 @@ echo "==> [4/8] Ensuring OpenCode config & data directories exist..."
 for dir in \
   "${PRIMARY_HOME}/.config/opencode" \
   "${PRIMARY_HOME}/.local/share/opencode" \
-  "${PRIMARY_HOME}/.local/share/opencode/log"; do
+  "${PRIMARY_HOME}/.local/share/opencode/log" \
+  "${PRIMARY_HOME}/.local/state/opencode"; do
   if [[ ! -d "$dir" ]]; then
     mkdir -p "$dir"
     echo "    Created ${dir}"
@@ -352,7 +353,7 @@ for dir in \
   chmod 770 "$dir"
 done
 
-# Ensure auth.json exists (required for bind mount, even if empty)
+# Ensure auth.json exists (OpenCode expects it, even if empty)
 AUTH_FILE="${PRIMARY_HOME}/.local/share/opencode/auth.json"
 if [[ ! -f "$AUTH_FILE" ]]; then
   echo '{}' > "$AUTH_FILE"

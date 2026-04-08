@@ -65,13 +65,26 @@ fi
 #   - Mounts auth directory rw (so /connect can save credentials)
 #   - Mounts config directories ro (same as main container)
 #   - Connects to the running headless server via `opencode attach`
-exec podman run --rm -it \
+# Ensure the state directory exists on the host (for model.json persistence)
+mkdir -p "${USER_HOME}/.local/state/opencode"
+chown "${AGENT_UID}:${PRIMARY_GID}" "${USER_HOME}/.local/state/opencode"
+
+podman run --rm -it \
   --name cont-ai-nerd-tui-$$ \
   --user "${AGENT_UID}:${PRIMARY_GID}" \
   --network host \
   -v "${USER_HOME}/.local/share/opencode:/home/agent/.local/share/opencode:rw" \
+  -v "${USER_HOME}/.local/state/opencode:/home/agent/.local/state/opencode:rw" \
   -v "${USER_HOME}/.config/opencode:/home/agent/.config/opencode:ro" \
   -v "${USER_HOME}/.config/cont-ai-nerd:/etc/cont-ai-nerd:ro" \
   --entrypoint opencode \
   localhost/cont-ai-nerd:latest \
   attach "http://${HOST}:${PORT}" "$@"
+
+# ── Restart the headless server to pick up any credential changes ────────
+# After /connect, new provider credentials are written to the host's
+# auth directory. The main container needs to restart to load them.
+echo ""
+echo "Restarting cont-ai-nerd to pick up any credential changes..."
+systemctl restart cont-ai-nerd.service
+echo "Done."

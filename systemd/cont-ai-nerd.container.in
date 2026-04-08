@@ -30,8 +30,11 @@ Volume=@@CONTAINERD_CONFIG@@/config.json:/etc/cont-ai-nerd/config.json:ro
 # OpenCode global configuration (read-only)
 Volume=@@PRIMARY_HOME@@/.config/opencode:/home/agent/.config/opencode:ro
 
-# OpenCode data directory (read-only) — includes auth.json, logs, etc.
-Volume=@@PRIMARY_HOME@@/.local/share/opencode:/home/agent/.local/share/opencode:ro
+# OpenCode data directory (read-write) — database, auth, logs, snapshots, etc.
+Volume=@@PRIMARY_HOME@@/.local/share/opencode:/home/agent/.local/share/opencode:rw
+
+# OpenCode state directory (read-write) — model preferences, prompt history, etc.
+Volume=@@PRIMARY_HOME@@/.local/state/opencode:/home/agent/.local/state/opencode:rw
 
 # ---------- Environment ----------
 # Point opencode at the cont-ai-nerd policy file (higher precedence than global config).

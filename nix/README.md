@@ -114,32 +114,22 @@ The common parent directory is stripped (e.g., `/home/alice/Projects` becomes
 
 ### Configure OpenCode credentials
 
-Use the host-side TUI (which has write access to credentials):
+Run the TUI and use `/connect` to authenticate with your LLM provider:
 
 ```bash
 sudo cont-ai-nerd-tui
 # Then run: /connect
 ```
 
+Credentials are saved automatically and persist across sessions — no restart needed.
+
 ### Access the TUI
-
-There are two ways to interact with the AI agent:
-
-**Option 1: Host-side TUI (Recommended for Authentication)**
 
 ```bash
 sudo cont-ai-nerd-tui
 ```
 
-This spawns a separate container with read-write access to your credentials directory, allowing `/connect` to save authentication tokens.
-
-**Option 2: Container-side TUI (Read-only)**
-
-```bash
-sudo podman exec -it cont-ai-nerd opencode-tui
-```
-
-This runs inside the main container with read-only credential access. Use this for normal coding sessions after initial setup.
+This attaches an interactive TUI to the headless OpenCode server running inside the container. You can use `/connect` at any time to authenticate or re-authenticate with an LLM provider.
 
 ### Prepare project permissions
 

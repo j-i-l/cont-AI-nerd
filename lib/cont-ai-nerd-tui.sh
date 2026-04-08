@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# cont-ai-nerd-tui — Interactive TUI with authentication capability
+# cont-ai-nerd-tui — Interactive TUI for cont-ai-nerd
 # =========================================================================
-# Spawns a separate container instance that can run /connect to authenticate.
-# The auth directory (~/.local/share/opencode) is mounted read-write so that
-# credentials can be saved.
+# Attaches an interactive TUI to the running cont-ai-nerd container.
+# All data (auth, database, model preferences) is persisted via the
+# container's read-write bind mounts — no separate container needed.
 #
-# This is different from `podman exec -it cont-ai-nerd opencode-tui` which
-# runs inside the main container with read-only auth (cannot run /connect).
+# Authentication via /connect works directly: the server handles credential
+# storage through its API and writes auth.json to the mounted data directory.
 #
 # Usage:
 #   sudo cont-ai-nerd-tui              # Start interactive TUI
@@ -14,41 +14,6 @@
 #
 # =========================================================================
 set -euo pipefail
-
-# ── Determine the primary user's home directory ──────────────────────────
-if [[ -n "${SUDO_USER:-}" ]]; then
-  USER_HOME=$(eval echo "~${SUDO_USER}")
-else
-  USER_HOME="$HOME"
-fi
-
-CONFIG="${USER_HOME}/.config/cont-ai-nerd/config.json"
-
-# ── Validate config exists ───────────────────────────────────────────────
-if [[ ! -f "$CONFIG" ]]; then
-  echo "Error: Configuration not found at $CONFIG" >&2
-  echo "Run setup.sh first to configure cont-ai-nerd." >&2
-  exit 1
-fi
-
-# ── Read configuration ───────────────────────────────────────────────────
-HOST=$(jq -r '.host // "127.0.0.1"' "$CONFIG")
-PORT=$(jq -r '.port // 3000' "$CONFIG")
-AGENT_USER=$(jq -r '.agent_user // "agent"' "$CONFIG")
-PRIMARY_USER=$(jq -r '.primary_user' "$CONFIG")
-
-# ── Resolve UID/GID ──────────────────────────────────────────────────────
-if ! AGENT_UID=$(id -u "$AGENT_USER" 2>/dev/null); then
-  echo "Error: Agent user '$AGENT_USER' not found." >&2
-  echo "Run setup.sh first to create the agent user." >&2
-  exit 1
-fi
-
-# Use the primary user's GID — this matches the mapped GID inside the container.
-if ! PRIMARY_GID=$(id -g "$PRIMARY_USER" 2>/dev/null); then
-  echo "Error: Primary user '$PRIMARY_USER' not found." >&2
-  exit 1
-fi
 
 # ── Check that the main container is running ─────────────────────────────
 # Use systemctl is-active rather than `podman ps` because the container is
@@ -60,31 +25,5 @@ if ! systemctl is-active --quiet cont-ai-nerd.service; then
   exit 1
 fi
 
-# ── Launch TUI container ─────────────────────────────────────────────────
-# This is a separate ephemeral container that:
-#   - Mounts auth directory rw (so /connect can save credentials)
-#   - Mounts config directories ro (same as main container)
-#   - Connects to the running headless server via `opencode attach`
-# Ensure the state directory exists on the host (for model.json persistence)
-mkdir -p "${USER_HOME}/.local/state/opencode"
-chown "${AGENT_UID}:${PRIMARY_GID}" "${USER_HOME}/.local/state/opencode"
-
-podman run --rm -it \
-  --name cont-ai-nerd-tui-$$ \
-  --user "${AGENT_UID}:${PRIMARY_GID}" \
-  --network host \
-  -v "${USER_HOME}/.local/share/opencode:/home/agent/.local/share/opencode:rw" \
-  -v "${USER_HOME}/.local/state/opencode:/home/agent/.local/state/opencode:rw" \
-  -v "${USER_HOME}/.config/opencode:/home/agent/.config/opencode:ro" \
-  -v "${USER_HOME}/.config/cont-ai-nerd:/etc/cont-ai-nerd:ro" \
-  --entrypoint opencode \
-  localhost/cont-ai-nerd:latest \
-  attach "http://${HOST}:${PORT}" "$@"
-
-# ── Restart the headless server to pick up any credential changes ────────
-# After /connect, new provider credentials are written to the host's
-# auth directory. The main container needs to restart to load them.
-echo ""
-echo "Restarting cont-ai-nerd to pick up any credential changes..."
-systemctl restart cont-ai-nerd.service
-echo "Done."
+# ── Attach TUI to the running container ──────────────────────────────────
+exec podman exec -it cont-ai-nerd opencode-tui "$@"

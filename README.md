@@ -101,7 +101,8 @@ cont[AI]*nerd* creates a sandboxed environment where an AI coding agent (OpenCod
 │  │                                                                  │   │
 │  │  Pre-defined Mounts                                              │   │
 │  │    - ~/.config/opencode → /home/agent/.config/opencode (ro)      │   │
-│  │    - ~/.local/share/opencode → /home/agent/.local/share (ro)     │   │
+│  │    - ~/.local/share/opencode → /home/agent/.local/share/... (rw) │   │
+│  │    - ~/.local/state/opencode → /home/agent/.local/state/... (rw) │   │
 │  │    - ~/.config/cont-ai-nerd/config.json → /etc/cont-ai-nerd/ (ro)│   │
 │  │                                                                  │   │
 │  │  Mounts (paths are examples, configured via config.json):        │   │
@@ -271,29 +272,13 @@ Upon completion, you'll see:
 =================================================================
   cont-ai-nerd setup complete.
 
-  Container : podman ps | grep cont-ai-nerd
-  TUI (rw)  : sudo cont-ai-nerd-tui        # can run /connect
-  TUI (ro)  : podman exec -it cont-ai-nerd opencode-tui
-  Watcher   : systemctl status cont-ai-nerd-watcher
-  Commits   : systemctl list-timers cont-ai-nerd-commit
-  Logs      : journalctl -u cont-ai-nerd -f
+   Container : podman ps | grep cont-ai-nerd
+   TUI       : sudo cont-ai-nerd-tui
+   Watcher   : systemctl status cont-ai-nerd-watcher
+   Commits   : systemctl list-timers cont-ai-nerd-commit
+   Logs      : journalctl -u cont-ai-nerd -f
 =================================================================
 ```
-
-### Step 4: Configure OpenCode Credentials
-
-Before using the TUI, you need to configure your LLM provider credentials. Use the host-side TUI script (which has write access to credentials):
-
-```bash
-sudo cont-ai-nerd-tui
-```
-
-Then in the TUI:
-```
-/connect
-```
-
-Follow the prompts to authenticate with your preferred provider.
 
 ---
 
@@ -301,27 +286,15 @@ Follow the prompts to authenticate with your preferred provider.
 
 ### Starting the TUI
 
-There are two ways to interact with the AI agent:
-
-#### Option 1: Host-side TUI (Recommended for Authentication)
-
-Use this when you need to run `/connect` to authenticate with an LLM provider:
-
 ```bash
 sudo cont-ai-nerd-tui
 ```
 
-This spawns a separate container with read-write access to your credentials directory (`~/.local/share/opencode`) and model state directory (`~/.local/state/opencode`), allowing `/connect` to save authentication tokens and model preferences. When you exit the TUI, the headless server is automatically restarted to pick up any credential changes.
+This attaches an interactive TUI to the headless OpenCode server running inside the container. You can use `/connect` to authenticate with your LLM provider — credentials are saved automatically and persist across sessions (no restart needed).
 
-#### Option 2: Container-side TUI (Read-only)
+### Initial Setup: Authenticate with a Provider
 
-For quick sessions when you're already authenticated:
-
-```bash
-sudo podman exec -it cont-ai-nerd opencode-tui
-```
-
-This runs inside the main container with read-only credential access. Use this for normal coding sessions after initial setup.
+On first use, run `/connect` in the TUI to authenticate with your preferred LLM provider (e.g., GitHub Copilot). The server writes credentials to `~/.local/share/opencode/auth.json` and reloads providers automatically.
 
 ### TUI Options
 
@@ -432,7 +405,8 @@ cont[AI]*nerd* uses rootful Podman to create a container that:
 - **Maps UIDs 1:1** — The `agent` user inside the container has the same UID as the host `agent` user
 - **Uses host networking** — Simplifies access; server binds to localhost only
 - **Mounts specific directories** — Only project directories are accessible read-write
-- **Mounts config read-only** — OpenCode configuration and credentials are read-only
+- **Mounts config read-only** — OpenCode configuration is read-only
+- **Mounts data read-write** — OpenCode data (database, credentials, model state) is read-write
 - **Limits resources** — Container is restricted to 2GB RAM and 100 processes
 
 ### File Permissions Model
@@ -583,7 +557,7 @@ This preserves:
 
 - **Project directories** (read-write) — Only paths listed in `project_paths`
 - **OpenCode config** (read-only) — Your OpenCode settings and themes
-- **OpenCode data** (read-only) — Session data and credentials
+- **OpenCode data** (read-write) — Session data, credentials, and model preferences
 
 ### What the Agent CANNOT Access
 
@@ -621,7 +595,7 @@ To expose the server to other machines (not recommended), change `host` to `0.0.
 
 ### Credential Storage
 
-OpenCode credentials are stored in `~/.local/share/opencode/auth.json` on the host. The entire `~/.local/share/opencode/` directory is mounted read-only into the main container. The host-side TUI (`cont-ai-nerd-tui`) mounts it read-write so `/connect` can save credentials, and automatically restarts the headless server on exit to pick up changes.
+OpenCode credentials are stored in `~/.local/share/opencode/auth.json` on the host. The `~/.local/share/opencode/` and `~/.local/state/opencode/` directories are mounted read-write into the container, so `/connect` can save credentials directly. After authentication, the server reloads providers automatically — no container restart is needed.
 
 ---
 
@@ -698,13 +672,11 @@ sudo apt install inotify-tools  # Ubuntu
 sudo podman exec cont-ai-nerd ls -la /home/agent/.local/share/opencode/
 ```
 
-**Re-authenticate using the host-side TUI (which has write access):**
+**Re-authenticate using the TUI:**
 ```bash
 sudo cont-ai-nerd-tui
 # Then run: /connect
 ```
-
-**Note:** The `podman exec` TUI has read-only credential access and cannot run `/connect`.
 
 ### Container Runs Out of Memory
 

@@ -107,8 +107,11 @@ let
     # OpenCode global configuration (read-only)
     Volume=${cfg.primaryHome}/.config/opencode:/home/agent/.config/opencode:ro
 
-    # OpenCode data directory (read-only) — includes auth.json, logs, etc.
-    Volume=${cfg.primaryHome}/.local/share/opencode:/home/agent/.local/share/opencode:ro
+    # OpenCode data directory (read-write) — database, auth, logs, snapshots, etc.
+    Volume=${cfg.primaryHome}/.local/share/opencode:/home/agent/.local/share/opencode:rw
+
+    # OpenCode state directory (read-write) — model preferences, prompt history, etc.
+    Volume=${cfg.primaryHome}/.local/state/opencode:/home/agent/.local/state/opencode:rw
 
     # ---------- Environment ----------
     Environment=OPENCODE_CONFIG=/etc/cont-ai-nerd/opencode.json
@@ -130,79 +133,19 @@ let
     WantedBy=multi-user.target
   '';
 
-  # TUI wrapper script that runs a separate container with rw auth mount.
-  # Uses the primary user's GID so the TUI process has the same group
-  # permissions as the main container agent.
+  # TUI wrapper script that attaches to the running container.
+  # All data (auth, database, model preferences) is persisted via the
+  # container's read-write bind mounts — no separate container needed.
   tuiScript = pkgs.writeShellScriptBin "cont-ai-nerd-tui" ''
     set -euo pipefail
 
-    CONFIG="${cfg.primaryHome}/.config/cont-ai-nerd/config.json"
-
-    if [[ ! -f "$CONFIG" ]]; then
-      echo "Error: Configuration not found at $CONFIG" >&2
-      exit 1
-    fi
-
-    HOST=$(${pkgs.jq}/bin/jq -r '.host // "127.0.0.1"' "$CONFIG")
-    PORT=$(${pkgs.jq}/bin/jq -r '.port // 3000' "$CONFIG")
-
-    AGENT_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.agent.user} 2>/dev/null)
-    # Use the primary user's GID — this matches the mapped GID inside the container.
-    PRIMARY_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.primaryUser} 2>/dev/null)
-
-    # The container is managed by systemd (rootful podman via Quadlet).
-    # A plain `podman ps` run as an unprivileged user only sees the rootless
-    # namespace and will never find it.  Checking the systemd unit is reliable.
     if ! systemctl is-active --quiet cont-ai-nerd.service 2>/dev/null; then
       echo "Error: cont-ai-nerd container is not running." >&2
       echo "Start it with: systemctl start cont-ai-nerd" >&2
       exit 1
     fi
 
-    # Ensure OpenCode data directories exist and are owned by the primary user.
-    # The activation script creates these, but may not have run if a prior
-    # nixos-rebuild failed mid-activation (e.g. image build step aborted).
-    # Running as root here (sudo cont-ai-nerd-tui), so we can create and chown.
-    for dir in \
-      "${cfg.primaryHome}/.config/opencode" \
-      "${cfg.primaryHome}/.local/share/opencode" \
-      "${cfg.primaryHome}/.local/share/opencode/log" \
-      "${cfg.primaryHome}/.local/state/opencode"; do
-      if [[ ! -d "$dir" ]]; then
-        mkdir -p "$dir"
-        chown ${cfg.primaryUser}: "$dir"
-        chmod 770 "$dir"
-      fi
-    done
-    AUTH_FILE="${cfg.primaryHome}/.local/share/opencode/auth.json"
-    if [[ ! -f "$AUTH_FILE" ]]; then
-      echo '{}' > "$AUTH_FILE"
-      chown ${cfg.primaryUser}: "$AUTH_FILE"
-      chmod 640 "$AUTH_FILE"
-    fi
-
-    # Ensure the state directory exists on the host (for model.json persistence)
-    mkdir -p "${cfg.primaryHome}/.local/state/opencode"
-    chown ${cfg.primaryUser}: "${cfg.primaryHome}/.local/state/opencode"
-    chmod 770 "${cfg.primaryHome}/.local/state/opencode"
-
-    ${pkgs.podman}/bin/podman run --rm -it \
-      --name cont-ai-nerd-tui-$$ \
-      --user "''${AGENT_UID}:''${PRIMARY_GID}" \
-      --network host \
-      -v "${cfg.primaryHome}/.local/share/opencode:/home/agent/.local/share/opencode:rw" \
-      -v "${cfg.primaryHome}/.local/state/opencode:/home/agent/.local/state/opencode:rw" \
-      -v "${cfg.primaryHome}/.config/opencode:/home/agent/.config/opencode:ro" \
-      -v "${cfg.primaryHome}/.config/cont-ai-nerd:/etc/cont-ai-nerd:ro" \
-      --entrypoint opencode \
-      localhost/cont-ai-nerd:latest \
-      attach "http://''${HOST}:''${PORT}" "$@"
-
-    # Restart the headless server to pick up any credential changes
-    echo ""
-    echo "Restarting cont-ai-nerd to pick up any credential changes..."
-    systemctl restart cont-ai-nerd.service
-    echo "Done."
+    exec ${pkgs.podman}/bin/podman exec -it cont-ai-nerd opencode-tui "$@"
   '';
 
 in {

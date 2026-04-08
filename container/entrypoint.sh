@@ -61,8 +61,8 @@ umask 002
 # If already running as non-root (e.g., podman run --user agent), skip setpriv.
 # Otherwise, drop from root to the agent user.
 if [ "$(id -u)" = "0" ]; then
-  AGENT_UID="$(id -u agent 2>/dev/null || echo 1001)"
-  AGENT_GID="$(id -g agent 2>/dev/null || echo 1001)"
+  AGENT_UID="$(id -u agent 2>/dev/null)"
+  AGENT_GID="$(id -g agent 2>/dev/null)"
   AGENT_HOME="$(getent passwd agent 2>/dev/null | cut -d: -f6)"
   AGENT_HOME="${AGENT_HOME:-/home/agent}"
   exec setpriv --reuid="$AGENT_UID" --regid="$AGENT_GID" --init-groups \

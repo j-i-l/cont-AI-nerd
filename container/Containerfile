@@ -6,9 +6,9 @@
 #          -t cont-ai-nerd .
 FROM ubuntu:24.04
 
-ARG AGENT_UID=1001
-ARG AGENT_GID=1001
-ARG AGENT_GROUP_NAME=users
+ARG AGENT_UID
+ARG AGENT_GID
+ARG AGENT_GROUP_NAME
 
 # Minimal runtime dependencies.
 # inotify-tools is included for potential in-container watchers.

@@ -146,9 +146,9 @@ let
     HOST=$(${pkgs.jq}/bin/jq -r '.host // "127.0.0.1"' "$CONFIG")
     PORT=$(${pkgs.jq}/bin/jq -r '.port // 3000' "$CONFIG")
 
-    AGENT_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.agent.user} 2>/dev/null || echo 1001)
+    AGENT_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.agent.user} 2>/dev/null)
     # Use the primary user's GID — this matches the mapped GID inside the container.
-    PRIMARY_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.primaryUser} 2>/dev/null || echo 1000)
+    PRIMARY_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.primaryUser} 2>/dev/null)
 
     # The container is managed by systemd (rootful podman via Quadlet).
     # A plain `podman ps` run as an unprivileged user only sees the rootless
@@ -376,8 +376,8 @@ in {
 
             AGENT_UID=$(${pkgs.coreutils}/bin/id -u ${cfg.agent.user} 2>/dev/null || echo 1001)
             # Use the primary user's GID and group name for the container.
-            PRIMARY_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.primaryUser} 2>/dev/null || echo 1000)
-            PRIMARY_GROUP=$(${pkgs.coreutils}/bin/id -gn ${cfg.primaryUser} 2>/dev/null || echo users)
+            PRIMARY_GID=$(${pkgs.coreutils}/bin/id -g ${cfg.primaryUser} 2>/dev/null)
+            PRIMARY_GROUP=$(${pkgs.coreutils}/bin/id -gn ${cfg.primaryUser} 2>/dev/null)
 
             echo "cont-ai-nerd: building container image..."
             ${pkgs.podman}/bin/podman build \

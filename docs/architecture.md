@@ -14,8 +14,8 @@ runs their own container instance with their own configuration.
 
  ~/.config/cont-ai-nerd/ ---->   /etc/cont-ai-nerd/   (bind mount, ro)
  ~/.config/opencode/     ---->   ~/.config/opencode/   (bind mount, ro)
- ~/.local/share/opencode/
-   auth.json             ---->   auth.json             (bind mount, ro)
+ ~/.local/share/opencode/ --->   ~/.local/share/opencode/ (bind mount, rw)
+ ~/.local/state/opencode/ --->   ~/.local/state/opencode/ (bind mount, rw)
 ```
 
 ## Components

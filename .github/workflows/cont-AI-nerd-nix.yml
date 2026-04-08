@@ -101,7 +101,7 @@ jobs:
       # ── Dummy OpenCode config ──────────────────────────────
       - name: Create dummy OpenCode config and auth
         run: |
-          mkdir -p ~/.config/opencode ~/.local/share/opencode ~/.local/share/opencode/log
+          mkdir -p ~/.config/opencode ~/.local/share/opencode
 
           cat > ~/.config/opencode/opencode.json <<'EOF'
           {
@@ -1118,17 +1118,6 @@ jobs:
           [[ "$MODE" == "770" ]] || \
             { echo "FAIL: ~/.local/share/opencode mode=$MODE expected=770"; exit 1; }
           echo "    PASS: ~/.local/share/opencode owner=$OWNER mode=$MODE"
-
-          echo "--- Verifying auth.json was re-created ---"
-          [[ -f "$HOME/.local/share/opencode/auth.json" ]] || \
-            { echo "FAIL: auth.json not re-created"; exit 1; }
-          OWNER=$(stat -c '%U' "$HOME/.local/share/opencode/auth.json")
-          MODE=$(stat -c '%a' "$HOME/.local/share/opencode/auth.json")
-          [[ "$OWNER" == "$USER" ]] || \
-            { echo "FAIL: auth.json owner=$OWNER expected=$USER"; exit 1; }
-          [[ "$MODE" == "640" ]] || \
-            { echo "FAIL: auth.json mode=$MODE expected=640"; exit 1; }
-          echo "    PASS: auth.json owner=$OWNER mode=$MODE"
 
           echo "--- Verifying ~/.config/opencode was re-created ---"
           [[ -d "$HOME/.config/opencode" ]] || \

@@ -290,20 +290,11 @@ in {
           for dir in \
             "${cfg.primaryHome}/.config/opencode" \
             "${cfg.primaryHome}/.local/share/opencode" \
-            "${cfg.primaryHome}/.local/share/opencode/log" \
             "${cfg.primaryHome}/.local/state/opencode"; do
             mkdir -p "$dir"
             chown ${cfg.primaryUser}: "$dir"
             chmod 770 "$dir"
           done
-
-          # Ensure auth.json exists (OpenCode expects it, even if empty)
-          AUTH_FILE="${cfg.primaryHome}/.local/share/opencode/auth.json"
-          if [ ! -f "$AUTH_FILE" ]; then
-            echo '{}' > "$AUTH_FILE"
-          fi
-          chown ${cfg.primaryUser}: "$AUTH_FILE"
-          chmod 660 "$AUTH_FILE"
 
           # Fix ownership and permissions on existing data/state files.
           # This handles upgrades from older setups where files may have been

@@ -341,7 +341,6 @@ echo "==> [4/8] Ensuring OpenCode config & data directories exist..."
 for dir in \
   "${PRIMARY_HOME}/.config/opencode" \
   "${PRIMARY_HOME}/.local/share/opencode" \
-  "${PRIMARY_HOME}/.local/share/opencode/log" \
   "${PRIMARY_HOME}/.local/state/opencode"; do
   if [[ ! -d "$dir" ]]; then
     mkdir -p "$dir"
@@ -352,15 +351,6 @@ for dir in \
   chown "${PRIMARY_USER}:" "$dir"
   chmod 770 "$dir"
 done
-
-# Ensure auth.json exists (OpenCode expects it, even if empty)
-AUTH_FILE="${PRIMARY_HOME}/.local/share/opencode/auth.json"
-if [[ ! -f "$AUTH_FILE" ]]; then
-  echo '{}' > "$AUTH_FILE"
-  echo "    Created ${AUTH_FILE} (placeholder)"
-fi
-chown "${PRIMARY_USER}:" "$AUTH_FILE"
-chmod 660 "$AUTH_FILE"
 
 # Fix ownership and permissions on existing data/state files.
 # This handles upgrades from older setups where files may have been

@@ -84,8 +84,9 @@ RUN mkdir -p /etc/cont-ai-nerd && chown agent:"${AGENT_GROUP_NAME}" /etc/cont-ai
 RUN mkdir -p /home/agent/.local/state/opencode && \
     chown -R agent:"${AGENT_GROUP_NAME}" /home/agent/.local/state
 
-# OpenCode data directories (logs, auth, etc.) — bind-mounted from host at runtime.
-RUN mkdir -p /home/agent/.local/share/opencode/log && \
+# OpenCode data directory — bind-mounted from host at runtime.
+# Subdirectories (log/, etc.) are created by the entrypoint after the mount.
+RUN mkdir -p /home/agent/.local/share/opencode && \
     chown -R agent:"${AGENT_GROUP_NAME}" /home/agent/.local/share/opencode
 
 # TUI attach wrapper script

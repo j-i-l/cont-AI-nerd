@@ -1,9 +1,9 @@
-# cont-ai-nerd — Sandboxed AI Agent Container Image
+# contain — Sandboxed AI Agent Container Image
 # Build: sudo podman build \
 #          --build-arg AGENT_UID=<uid> \
 #          --build-arg AGENT_GID=<primary_gid> \
 #          --build-arg AGENT_GROUP_NAME=<primary_group> \
-#          -t cont-ai-nerd .
+#          -t contAIn:latest .
 FROM ubuntu:24.04
 
 ARG AGENT_UID
@@ -77,8 +77,8 @@ RUN ACTUAL_GID=$(id -g agent) && \
 RUN mkdir -p /opt/tools/bin && chown -R agent:"${AGENT_GROUP_NAME}" /opt/tools
 ENV PATH="/opt/tools/bin:${PATH}"
 
-# Config directory for the cont-ai-nerd policy file.
-RUN mkdir -p /etc/cont-ai-nerd && chown agent:"${AGENT_GROUP_NAME}" /etc/cont-ai-nerd
+# Config directory for the contain policy file.
+RUN mkdir -p /etc/contain && chown agent:"${AGENT_GROUP_NAME}" /etc/contain
 
 # OpenCode state directory (needed for runtime state like sessions and model preferences).
 RUN mkdir -p /home/agent/.local/state/opencode && \
@@ -109,7 +109,7 @@ WORKDIR /workspace
 # Reads port from config.json if available, falls back to 3000.
 # Interval: 30s, Timeout: 5s, Retries: 3, Start period: 10s (allow time for startup)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-  CMD PORT=$(jq -r '.port // 3000' /etc/cont-ai-nerd/config.json 2>/dev/null || echo 3000) && \
+  CMD PORT=$(jq -r '.port // 3000' /etc/contain/config.json 2>/dev/null || echo 3000) && \
       curl -sf "http://127.0.0.1:${PORT}/global/health" || exit 1
 
 # The entrypoint runs as root to create symlinks, then drops to agent.

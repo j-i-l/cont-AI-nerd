@@ -1,9 +1,9 @@
 #!/bin/sh
-# entrypoint.sh — cont-ai-nerd container entrypoint
+# entrypoint.sh — contain container entrypoint
 # =========================================================================
 # This script runs as root at container startup. It:
 #
-#   1. Reads path_map from /etc/cont-ai-nerd/config.json
+#   1. Reads path_map from /etc/contain/config.json
 #   2. Creates symlinks from host-side paths to their /workspace equivalents
 #      so that OpenCode clients can use host-side paths as working directories
 #   3. Ensures required subdirectories exist inside bind-mounted volumes
@@ -34,7 +34,7 @@
 # =========================================================================
 set -eu
 
-CONFIG="/etc/cont-ai-nerd/config.json"
+CONFIG="/etc/contain/config.json"
 
 # ── Create symlinks from host paths to /workspace paths ──────────────────
 # Only attempt symlink creation if running as root (normal startup).

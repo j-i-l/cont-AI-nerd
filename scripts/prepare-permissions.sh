@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # prepare-permissions.sh — Make project directories traversable for the agent
 # =========================================================================
-# This script prepares project directories for use with cont-ai-nerd by:
+# This script prepares project directories for use with contain by:
 #
 #   1. Making directories traversable (g+x) so the agent can navigate
 #   2. Setting .git/ directories to read-only for the group
@@ -145,7 +145,7 @@ usage() {
 Usage: $(basename "$0") [OPTIONS] <directory> [<directory>...]
        $(basename "$0") --from-config
 
-Make project directories traversable for the cont-ai-nerd agent.
+Make project directories traversable for the contain agent.
 
 This script ensures directories have g+x (traversable) and sets .git/
 to read-only. It does NOT modify individual file permissions — the agent
@@ -154,7 +154,7 @@ accesses files via the primary user's mapped group permissions.
 Options:
   --dry-run           Show what would be changed without making changes
   --verbose, -v       Show detailed output
-  --from-config       Read project paths from ~/.config/cont-ai-nerd/config.json
+  --from-config       Read project paths from ~/.config/contain/config.json
   --lock-sensitive    Lock sensitive files (600) and dirs (700) without prompting
   --no-lock-sensitive Skip sensitive file handling without prompting
   --help, -h          Show this help message
@@ -218,7 +218,7 @@ if [[ "$FROM_CONFIG" == "true" ]]; then
   fi
   
   DETECTED_HOME=$(eval echo "~${DETECTED_USER}")
-  CONFIG_FILE="${DETECTED_HOME}/.config/cont-ai-nerd/config.json"
+  CONFIG_FILE="${DETECTED_HOME}/.config/contain/config.json"
   
   if [[ ! -f "$CONFIG_FILE" ]]; then
     die "Config file not found: ${CONFIG_FILE}"
@@ -461,7 +461,7 @@ prompt_sensitive() {
 # ── Main ─────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}=================================================================${RESET}"
-echo -e "${BOLD}  cont-ai-nerd — Permission Preparation${RESET}"
+echo -e "${BOLD}  contain — Permission Preparation${RESET}"
 echo -e "${BOLD}=================================================================${RESET}"
 echo ""
 echo "  Directories     : ${DIRECTORIES[*]}"

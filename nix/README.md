@@ -1,7 +1,7 @@
 # cont[AI]*nerd* - NixOS Installation
 
 This directory contains a NixOS flake module that declaratively manages
-the entire cont-ai-nerd deployment: users, systemd services, Podman
+the entire contain deployment: users, systemd services, Podman
 Quadlet container, and file permissions.
 
 For the general (non-NixOS) installation, see the main
@@ -28,17 +28,17 @@ In your `flake.nix`:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    cont-ai-nerd = {
+    contain = {
       url = "github:j-i-l/cont-AI-nerd";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, cont-ai-nerd, ... }: {
+  outputs = { self, nixpkgs, contain, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        cont-ai-nerd.nixosModules.default
+        contain.nixosModules.default
         ./configuration.nix
       ];
     };
@@ -53,7 +53,7 @@ In your `configuration.nix` (or a dedicated module file):
 ```nix
 { config, ... }:
 {
-  services.cont-ai-nerd = {
+  services.contain = {
     enable = true;
 
     # Required
@@ -82,7 +82,7 @@ This will:
 1. Create the `agent` system user (sharing the primary user's group)
 2. Enable Podman
 3. Build the container image (first run only, or when the Containerfile changes)
-4. Generate `config.json` and `opencode.json` in `~/.config/cont-ai-nerd/`
+4. Generate `config.json` and `opencode.json` in `~/.config/contain/`
 5. Install the Quadlet container file
 6. Start the watcher service and commit timer
 7. Set project directory permissions
@@ -97,7 +97,7 @@ The common parent directory is stripped (e.g., `/home/alice/Projects` becomes
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enable` | bool | `false` | Enable the cont-ai-nerd service |
+| `enable` | bool | `false` | Enable the contain service |
 | `primaryUser` | string | - | Login name of the primary (human) user |
 | `primaryHome` | path | `/home/${primaryUser}` | Home directory of the primary user |
 | `projectPaths` | list of path | - | Directories the agent can access |
@@ -117,7 +117,7 @@ The common parent directory is stripped (e.g., `/home/alice/Projects` becomes
 Run the TUI and use `/connect` to authenticate with your LLM provider:
 
 ```bash
-sudo cont-ai-nerd-tui
+sudo contain-tui
 # Then run: /connect
 ```
 
@@ -126,7 +126,7 @@ Credentials are saved automatically and persist across sessions — no restart n
 ### Access the TUI
 
 ```bash
-sudo cont-ai-nerd-tui
+sudo contain-tui
 ```
 
 This attaches an interactive TUI to the headless OpenCode server running inside the container. You can use `/connect` at any time to authenticate or re-authenticate with an LLM provider.
@@ -138,13 +138,13 @@ read-only), use the bundled preparation script:
 
 ```bash
 # Preview changes
-sudo cont-ai-nerd-prepare-permissions --dry-run ~/Projects
+sudo contain-prepare-permissions --dry-run ~/Projects
 
 # Apply
-sudo cont-ai-nerd-prepare-permissions ~/Projects
+sudo contain-prepare-permissions ~/Projects
 
 # Or read paths from the generated config
-sudo cont-ai-nerd-prepare-permissions --from-config
+sudo contain-prepare-permissions --from-config
 ```
 
 ---
@@ -155,7 +155,7 @@ To update the container image after a new OpenCode release:
 
 ```nix
 # Pin a specific version
-services.cont-ai-nerd.container.opencodeVersion = "0.5.0";
+services.contain.container.opencodeVersion = "0.5.0";
 ```
 
 Then rebuild:
@@ -168,7 +168,7 @@ The activation script detects Containerfile changes and rebuilds
 automatically. To force a rebuild:
 
 ```bash
-sudo rm /var/lib/cont-ai-nerd/containerfile.sha256
+sudo rm /var/lib/contain/containerfile.sha256
 sudo nixos-rebuild switch
 ```
 
@@ -176,7 +176,7 @@ sudo nixos-rebuild switch
 
 ## Development Shell
 
-For contributing to cont-ai-nerd, a development shell is provided:
+For contributing to contain, a development shell is provided:
 
 ```bash
 nix develop github:j-i-l/cont-AI-nerd
@@ -209,8 +209,8 @@ This gives you `bash`, `jq`, `podman`, `inotify-tools`, and `shellcheck`.
 ### Container service not starting
 
 ```bash
-systemctl status cont-ai-nerd
-journalctl -u cont-ai-nerd -n 50
+systemctl status contain
+journalctl -u contain -n 50
 ```
 
 If the Quadlet generator did not pick up the file:
@@ -225,21 +225,21 @@ systemctl daemon-reload
 Check if the activation script ran:
 
 ```bash
-ls -la /var/lib/cont-ai-nerd/containerfile.sha256
-podman images | grep cont-ai-nerd
+ls -la /var/lib/contain/containerfile.sha256
+podman images | grep contain
 ```
 
 Force a rebuild:
 
 ```bash
-sudo rm /var/lib/cont-ai-nerd/containerfile.sha256
+sudo rm /var/lib/contain/containerfile.sha256
 sudo nixos-rebuild switch
 ```
 
 ### Watcher service errors
 
 ```bash
-journalctl -u cont-ai-nerd-watcher -f
+journalctl -u contain-watcher -f
 ```
 
 Ensure `inotify-tools` is available (it should be, via `environment.systemPackages`).

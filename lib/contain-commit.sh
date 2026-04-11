@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# cont-ai-nerd-commit.sh
+# contain-commit.sh
 # ---------------------------------------------------------------------------
-# Snapshots the running cont-ai-nerd container's writable layer into a new
+# Snapshots the running contain container's writable layer into a new
 # tagged image.  Old tags are pruned to keep disk usage bounded.
 #
-# Intended to be called by a systemd timer (see cont-ai-nerd-commit.timer).
+# Intended to be called by a systemd timer (see contain-commit.timer).
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-CONTAINER_NAME="cont-ai-nerd"
-IMAGE_NAME="localhost/cont-ai-nerd"
+CONTAINER_NAME="contAIn"
+IMAGE_NAME="localhost/contAIn"
 KEEP_TAGS=5
 
 # Nothing to do if the container is not running.

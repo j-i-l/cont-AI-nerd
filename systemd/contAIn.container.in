@@ -1,17 +1,17 @@
-# Podman Quadlet — cont-ai-nerd
+# Podman Quadlet — contain
 # This is a TEMPLATE. setup.sh renders it with concrete values into
-# /etc/containers/systemd/cont-ai-nerd.container
+# /etc/containers/systemd/contain.container
 #
 # Placeholders (sed/awk-replaced by setup.sh):
 #   VOLUME_LINES, PRIMARY_HOME, CONTAINERD_CONFIG, HOST, PORT
 
 [Unit]
-Description=cont-ai-nerd — Sandboxed AI Agent Container
+Description=contain — Sandboxed AI Agent Container
 After=network-online.target
 
 [Container]
-ContainerName=cont-ai-nerd
-Image=localhost/cont-ai-nerd:latest
+ContainerName=contAIn
+Image=localhost/contAIn:latest
 
 # The entrypoint runs as root to create host-path symlinks,
 # then drops to the agent user via setpriv.
@@ -21,11 +21,11 @@ Image=localhost/cont-ai-nerd:latest
 # Project directories (read-write, SELinux relabel)
 @@VOLUME_LINES@@
 
-# cont-ai-nerd generated policy (external_directory allow-list, read-only)
-Volume=@@CONTAINERD_CONFIG@@/opencode.json:/etc/cont-ai-nerd/opencode.json:ro
+# contain generated policy (external_directory allow-list, read-only)
+Volume=@@CONTAINERD_CONFIG@@/opencode.json:/etc/contain/opencode.json:ro
 
-# cont-ai-nerd configuration (for opencode-tui wrapper)
-Volume=@@CONTAINERD_CONFIG@@/config.json:/etc/cont-ai-nerd/config.json:ro
+# contain configuration (for opencode-tui wrapper)
+Volume=@@CONTAINERD_CONFIG@@/config.json:/etc/contain/config.json:ro
 
 # OpenCode global configuration (read-only)
 Volume=@@PRIMARY_HOME@@/.config/opencode:/home/agent/.config/opencode:ro
@@ -37,8 +37,8 @@ Volume=@@PRIMARY_HOME@@/.local/share/opencode:/home/agent/.local/share/opencode:
 Volume=@@PRIMARY_HOME@@/.local/state/opencode:/home/agent/.local/state/opencode:rw
 
 # ---------- Environment ----------
-# Point opencode at the cont-ai-nerd policy file (higher precedence than global config).
-Environment=OPENCODE_CONFIG=/etc/cont-ai-nerd/opencode.json
+# Point opencode at the contain policy file (higher precedence than global config).
+Environment=OPENCODE_CONFIG=/etc/contain/opencode.json
 
 # ---------- Networking ----------
 # Host networking keeps things simple; opencode binds to localhost only.

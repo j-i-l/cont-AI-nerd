@@ -5,12 +5,12 @@
 # All functions read from stdin or a file and write to stdout.
 # =========================================================================
 
-# render_container_unit — render cont-ai-nerd.container.in
+# render_container_unit — render contain.container.in
 #
 # Arguments (named via env vars to keep the interface explicit):
 #   $1  template_path   — path to the .container.in template
 #   $2  primary_home    — absolute path to the primary user's home directory
-#   $3  containerd_config — path to ~/.config/cont-ai-nerd on the host
+#   $3  containerd_config — path to ~/.config/contain on the host
 #   $4  host            — listen address (e.g. 127.0.0.1)
 #   $5  port            — listen port (e.g. 3000)
 #   $6  volume_lines    — pre-built Volume= directives (newline-separated)
@@ -33,7 +33,7 @@ render_container_unit() {
     awk -v lines="$volume_lines" '{gsub(/@@VOLUME_LINES@@/, lines); print}'
 }
 
-# render_watcher_unit — render cont-ai-nerd-watcher.service.in
+# render_watcher_unit — render contain-watcher.service.in
 #
 # Arguments:
 #   $1  template_path   — path to the .service.in template
@@ -58,7 +58,7 @@ render_watcher_unit() {
     "${template_path}"
 }
 
-# render_commit_service — render cont-ai-nerd-commit.service
+# render_commit_service — render contain-commit.service
 #
 # Arguments:
 #   $1  template_path   — path to the .service template

@@ -1,4 +1,4 @@
-name: Test cont-ai-nerd (Nix flake)
+name: Test contAIn (Nix flake)
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
       - "tests/**"
       - "nix/**"
       - "flake.nix"
-      - ".github/workflows/test-cont-ai-nerd-nix.yml"
+      - ".github/workflows/contAIn-nix.yml"
   pull_request:
     paths:
       - "scripts/**"
@@ -20,7 +20,7 @@ on:
       - "tests/**"
       - "nix/**"
       - "flake.nix"
-      - ".github/workflows/test-cont-ai-nerd-nix.yml"
+      - ".github/workflows/contAIn-nix.yml"
   # workflow_dispatch:
 
 jobs:
@@ -68,21 +68,21 @@ jobs:
           NIXPKGS_ALLOW_UNFREE=1 nix build .# --print-build-logs --impure
           echo "Nix package built successfully"
           ls -la result/bin/
-          ls -la result/lib/cont-ai-nerd/
+          ls -la result/lib/contain/
 
       - name: Verify Nix-built scripts are properly wrapped
         run: |
-          echo "--- Checking cont-ai-nerd-prepare-permissions wrapper ---"
-          head -5 result/bin/cont-ai-nerd-prepare-permissions
+          echo "--- Checking contain-prepare-permissions wrapper ---"
+          head -5 result/bin/contain-prepare-permissions
 
           echo "--- Checking watcher script wrapper ---"
-          head -5 result/lib/cont-ai-nerd/cont-ai-nerd-watcher.sh
+          head -5 result/lib/contain/contain-watcher.sh
 
           echo "--- Checking commit script wrapper ---"
-          head -5 result/lib/cont-ai-nerd/cont-ai-nerd-commit.sh
+          head -5 result/lib/contain/contain-commit.sh
 
           echo "--- Checking Nix store paths are in wrapper PATH ---"
-          grep -q '/nix/store' result/bin/cont-ai-nerd-prepare-permissions \
+          grep -q '/nix/store' result/bin/contain-prepare-permissions \
             && echo "PASS: Nix store paths present in wrapper" \
             || { echo "FAIL: expected Nix store paths in wrapper"; exit 1; }
 
@@ -94,8 +94,8 @@ jobs:
             scripts/setup.sh \
             scripts/prepare-permissions.sh \
             lib/render-template.sh \
-            lib/cont-ai-nerd-watcher.sh \
-            lib/cont-ai-nerd-commit.sh \
+            lib/contain-watcher.sh \
+            lib/contain-commit.sh \
             container/entrypoint.sh
 
       # ── Dummy OpenCode config ──────────────────────────────
@@ -138,7 +138,7 @@ jobs:
           | sudo -E ./scripts/configure.sh
 
           echo "--- Verifying config.json was created ---"
-          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+          CONFIG="$HOME/.config/contain/config.json"
           [[ -f "$CONFIG" ]] || { echo "FAIL: config.json not found"; exit 1; }
 
           echo "--- Checking config file permissions ---"
@@ -187,9 +187,9 @@ jobs:
 
           echo "--- Checking container image UIDs match host ---"
           IMG_UID=$(sudo podman run --rm --entrypoint id \
-            localhost/cont-ai-nerd:latest -u agent)
+            localhost/contAIn:latest -u agent)
           IMG_GID=$(sudo podman run --rm --entrypoint id \
-            localhost/cont-ai-nerd:latest -g agent)
+            localhost/contAIn:latest -g agent)
 
           [[ "$AGENT_UID" == "$IMG_UID" ]] || \
             { echo "FAIL: agent UID mismatch host=$AGENT_UID img=$IMG_UID"; exit 1; }
@@ -199,10 +199,10 @@ jobs:
           echo "PASS: identity provisioning"
 
       # ── 2. Verify config generation ────────────────────────
-      - name: "Test: cont-ai-nerd config generation"
+      - name: "Test: contain config generation"
         run: |
           set -euo pipefail
-          POLICY="$HOME/.config/cont-ai-nerd/opencode.json"
+          POLICY="$HOME/.config/contain/opencode.json"
 
           echo "--- Checking policy file exists ---"
           [[ -f "$POLICY" ]] || { echo "FAIL: $POLICY not found"; exit 1; }
@@ -234,20 +234,20 @@ jobs:
       - name: "Test: config.json mount"
         run: |
           set -euo pipefail
-          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+          CONFIG="$HOME/.config/contain/config.json"
 
           echo "--- Checking config.json is mounted in container ---"
           sudo podman run --rm \
-            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            -v "${CONFIG}:/etc/contain/config.json:ro" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest /etc/cont-ai-nerd/config.json | jq -e '.primary_user'
+            localhost/contAIn:latest /etc/contain/config.json | jq -e '.primary_user'
 
           echo "--- Checking config.json content matches host ---"
           HOST_USER=$(jq -r '.primary_user' "$CONFIG")
           CONTAINER_USER=$(sudo podman run --rm \
-            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            -v "${CONFIG}:/etc/contain/config.json:ro" \
             --entrypoint jq \
-            localhost/cont-ai-nerd:latest -r '.primary_user' /etc/cont-ai-nerd/config.json)
+            localhost/contAIn:latest -r '.primary_user' /etc/contain/config.json)
 
           [[ "$HOST_USER" == "$CONTAINER_USER" ]] || \
             { echo "FAIL: config mismatch host=$HOST_USER container=$CONTAINER_USER"; exit 1; }
@@ -259,23 +259,23 @@ jobs:
         run: |
           set -euo pipefail
           echo "--- Checking image exists ---"
-          sudo podman image exists localhost/cont-ai-nerd:latest
+          sudo podman image exists localhost/contAIn:latest
 
           echo "--- Checking opencode binary ---"
           sudo podman run --rm --entrypoint which \
-            localhost/cont-ai-nerd:latest opencode
+            localhost/contAIn:latest opencode
 
           echo "--- Checking /opt/tools/bin in PATH ---"
           sudo podman run --rm --entrypoint sh \
-            localhost/cont-ai-nerd:latest -c 'echo $PATH' | grep -q '/opt/tools/bin'
+            localhost/contAIn:latest -c 'echo $PATH' | grep -q '/opt/tools/bin'
 
-          echo "--- Checking /etc/cont-ai-nerd directory ---"
+          echo "--- Checking /etc/contain directory ---"
           sudo podman run --rm --entrypoint ls \
-            localhost/cont-ai-nerd:latest -la /etc/cont-ai-nerd
+            localhost/contAIn:latest -la /etc/contain
 
           echo "--- Checking opencode-tui wrapper exists ---"
           sudo podman run --rm --entrypoint which \
-            localhost/cont-ai-nerd:latest opencode-tui
+            localhost/contAIn:latest opencode-tui
 
           echo "PASS: container image"
 
@@ -283,25 +283,25 @@ jobs:
       - name: "Test: opencode-tui wrapper"
         run: |
           set -euo pipefail
-          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+          CONFIG="$HOME/.config/contain/config.json"
           AGENT_UID=$(id -u agent)
           PRIMARY_GID=$(id -g "$USER")
 
           echo "--- Checking opencode-tui script is executable ---"
           sudo podman run --rm \
             --user ${AGENT_UID}:${PRIMARY_GID} \
-            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            -v "${CONFIG}:/etc/contain/config.json:ro" \
             --entrypoint test \
-            localhost/cont-ai-nerd:latest -x /usr/local/bin/opencode-tui
+            localhost/contAIn:latest -x /usr/local/bin/opencode-tui
 
           echo "--- Checking opencode-tui reads config (expect: error without server) ---"
           # The script should try to connect but fail (no server running)
           # This validates it correctly reads the config and constructs the URL
           OUTPUT=$(sudo podman run --rm \
             --user ${AGENT_UID}:${PRIMARY_GID} \
-            -v "${CONFIG}:/etc/cont-ai-nerd/config.json:ro" \
+            -v "${CONFIG}:/etc/contain/config.json:ro" \
             --entrypoint opencode-tui \
-            localhost/cont-ai-nerd:latest 2>&1 || true)
+            localhost/contAIn:latest 2>&1 || true)
 
           # Should mention the connection attempt, not a config error
           if echo "$OUTPUT" | grep -qi "config file not found"; then
@@ -321,19 +321,19 @@ jobs:
           # Give the quadlet generator and services time to start
           sleep 5
 
-          echo "--- Listing cont-ai-nerd units ---"
-          systemctl list-units --all '*cont-ai-nerd*' 2>&1 || true
+          echo "--- Listing contain units ---"
+          systemctl list-units --all '*contain*' 2>&1 || true
 
           echo "--- Checking watcher service is enabled and active ---"
-          systemctl is-enabled cont-ai-nerd-watcher.service
-          systemctl is-active cont-ai-nerd-watcher.service
+          systemctl is-enabled contain-watcher.service
+          systemctl is-active contain-watcher.service
 
           echo "--- Checking commit timer ---"
-          systemctl is-enabled cont-ai-nerd-commit.timer
-          systemctl list-timers cont-ai-nerd-commit --no-pager
+          systemctl is-enabled contain-commit.timer
+          systemctl list-timers contain-commit --no-pager
 
           echo "--- Checking container status ---"
-          sudo podman ps -a --filter name=cont-ai-nerd \
+          sudo podman ps -a --filter name=contain \
             --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 
           echo "PASS: systemd services"
@@ -346,7 +346,7 @@ jobs:
           echo "--- Waiting for container to start (up to 30s) ---"
           CONTAINER_RUNNING=false
           for i in $(seq 1 30); do
-            if sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
+            if sudo podman ps --filter name=contain --format '{{.Names}}' | grep -q '^contain$'; then
               echo "    Container running after ${i}s"
               CONTAINER_RUNNING=true
               break
@@ -358,23 +358,23 @@ jobs:
             echo "FAIL: Container did not start within 30s"
             echo ""
             echo "--- systemctl status ---"
-            systemctl status cont-ai-nerd.service --no-pager 2>&1 || true
+            systemctl status contain.service --no-pager 2>&1 || true
             echo ""
             echo "--- journalctl ---"
-            journalctl -u cont-ai-nerd --no-pager -n 50 2>&1 || true
+            journalctl -u contain --no-pager -n 50 2>&1 || true
             exit 1
           fi
 
           echo "--- Checking container health status ---"
           # The container should have a healthcheck defined
-          HEALTH=$(sudo podman inspect cont-ai-nerd --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
+          HEALTH=$(sudo podman inspect contain --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
           echo "    Health status: $HEALTH"
 
           # Allow some time for healthcheck to run
           sleep 15
 
           echo "--- Checking health status after 15s ---"
-          HEALTH=$(sudo podman inspect cont-ai-nerd --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
+          HEALTH=$(sudo podman inspect contain --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
           echo "    Health status: $HEALTH"
 
           # Note: The container may not be healthy if OpenCode needs credentials
@@ -389,7 +389,7 @@ jobs:
       - name: "Test: health check from host"
         run: |
           set -euo pipefail
-          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+          CONFIG="$HOME/.config/contain/config.json"
 
           HOST=$(jq -r '.host' "$CONFIG")
           PORT=$(jq -r '.port' "$CONFIG")
@@ -411,7 +411,7 @@ jobs:
 
             # Check container logs for more info
             echo "--- Container logs (last 20 lines) ---"
-            sudo podman logs cont-ai-nerd 2>&1 | tail -20 || true
+            sudo podman logs contain 2>&1 | tail -20 || true
           fi
 
           echo "PASS: health check from host (test completed)"
@@ -456,7 +456,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID}
             -v ${PROJECT}:${WORKSPACE}:rw
             --entrypoint cat
-            localhost/cont-ai-nerd:latest"
+            localhost/contAIn:latest"
 
           echo ""
           echo "--- Testing file_660 (group rw, expect: readable) ---"
@@ -499,7 +499,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             -c "echo 'agent-was-here' >> '${WORKSPACE}/file_660'"
 
           grep -q 'agent-was-here' "$PROJECT/file_660" \
@@ -511,7 +511,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             -c "echo 'should-fail' >> '${WORKSPACE}/file_600'" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to 600"
             exit 1
@@ -537,7 +537,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint chmod \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             666 "${WORKSPACE}/file_600" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to chmod 600 file"
             exit 1
@@ -558,7 +558,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint chmod \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             777 "${WORKSPACE}/file_660" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to chmod file it doesn't own"
             exit 1
@@ -572,7 +572,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint chown \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             "${AGENT_UID}:${PRIMARY_GID}" "${WORKSPACE}/file_600" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to chown"
             exit 1
@@ -606,7 +606,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             "${WORKSPACE}/secret_600_ai" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to read 600 file"
             exit 1
@@ -619,7 +619,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${PROJECT}:${WORKSPACE}:rw" \
             --entrypoint chmod \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             660 "${WORKSPACE}/secret_600_ai" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to chmod"
             exit 1
@@ -647,17 +647,17 @@ jobs:
           EXPECTED_GROUP="$(id -gn)"
 
           echo "--- Verifying container is running ---"
-          if ! sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
-            echo "FAIL: cont-ai-nerd container is not running"
+          if ! sudo podman ps --filter name=contain --format '{{.Names}}' | grep -q '^contain$'; then
+            echo "FAIL: contain container is not running"
             echo "--- Container logs ---"
-            sudo podman logs cont-ai-nerd 2>&1 | tail -50 || true
+            sudo podman logs contain 2>&1 | tail -50 || true
             echo "--- systemctl status ---"
-            systemctl status cont-ai-nerd.service --no-pager 2>&1 || true
+            systemctl status contain.service --no-pager 2>&1 || true
             exit 1
           fi
 
           echo "--- Creating file as agent user via podman exec ---"
-          sudo podman exec --user agent cont-ai-nerd touch "$CONTAINER_TEST_FILE"
+          sudo podman exec --user agent contain touch "$CONTAINER_TEST_FILE"
 
           echo "--- Waiting for watcher to process (polling up to 10s) ---"
           # The watcher should reassign ownership from agent to primary user.
@@ -702,15 +702,15 @@ jobs:
           EXPECTED_GROUP="$(id -gn)"
 
           echo "--- Verifying container is running ---"
-          if ! sudo podman ps --filter name=cont-ai-nerd --format '{{.Names}}' | grep -q '^cont-ai-nerd$'; then
-            echo "FAIL: cont-ai-nerd container is not running"
+          if ! sudo podman ps --filter name=contain --format '{{.Names}}' | grep -q '^contain$'; then
+            echo "FAIL: contain container is not running"
             echo "--- Container logs ---"
-            sudo podman logs cont-ai-nerd 2>&1 | tail -50 || true
+            sudo podman logs contain 2>&1 | tail -50 || true
             exit 1
           fi
 
           echo "--- Creating directory as agent user via podman exec ---"
-          sudo podman exec --user agent cont-ai-nerd mkdir "$CONTAINER_TEST_DIR"
+          sudo podman exec --user agent contain mkdir "$CONTAINER_TEST_DIR"
 
           echo "--- Waiting for watcher to process (polling up to 10s) ---"
           # The watcher should reassign ownership.
@@ -751,15 +751,15 @@ jobs:
           set -euo pipefail
           AGENT_UID=$(id -u agent)
           PRIMARY_GID=$(id -g "$USER")
-          CONTAINERD_CONFIG="$HOME/.config/cont-ai-nerd"
+          CONTAINERD_CONFIG="$HOME/.config/contain"
 
-          echo "--- Testing write to cont-ai-nerd config (expect: BLOCKED) ---"
+          echo "--- Testing write to contain config (expect: BLOCKED) ---"
           if sudo podman run --rm \
             --user ${AGENT_UID}:${PRIMARY_GID} \
-            -v "${CONTAINERD_CONFIG}/opencode.json:/etc/cont-ai-nerd/opencode.json:ro" \
+            -v "${CONTAINERD_CONFIG}/opencode.json:/etc/contain/opencode.json:ro" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
-            -c "echo 'tamper' >> /etc/cont-ai-nerd/opencode.json" 2>/dev/null; then
+            localhost/contAIn:latest \
+            -c "echo 'tamper' >> /etc/contain/opencode.json" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to config"
             exit 1
           else
@@ -771,7 +771,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "$HOME/.local/share/opencode:/home/agent/.local/share/opencode:ro" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             -c "echo 'tamper' >> /home/agent/.local/share/opencode/auth.json" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to auth data"
             exit 1
@@ -784,7 +784,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "$HOME/.config/opencode:/home/agent/.config/opencode:ro" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             -c "echo 'tamper' >> /home/agent/.config/opencode/opencode.json" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to global config"
             exit 1
@@ -803,7 +803,7 @@ jobs:
           AGENT_UID=$(id -u agent)
           PRIMARY_GID=$(id -g "$USER")
 
-          NIX_PREPARE_PERMS="$(pwd)/result/bin/cont-ai-nerd-prepare-permissions"
+          NIX_PREPARE_PERMS="$(pwd)/result/bin/contain-prepare-permissions"
           echo "--- Using Nix-built binary: $NIX_PREPARE_PERMS ---"
           [[ -x "$NIX_PREPARE_PERMS" ]] || \
             { echo "FAIL: $NIX_PREPARE_PERMS not found or not executable"; exit 1; }
@@ -855,7 +855,7 @@ jobs:
           ls -la "$TEST_DIR/subdir/" || true
 
           echo ""
-          echo "--- Running Nix-built cont-ai-nerd-prepare-permissions (default: no lock) ---"
+          echo "--- Running Nix-built contain-prepare-permissions (default: no lock) ---"
           sudo "$NIX_PREPARE_PERMS" --no-lock-sensitive "$TEST_DIR"
 
           echo ""
@@ -928,7 +928,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/.git/HEAD" > /dev/null || \
+            localhost/contAIn:latest "${WORKSPACE_TEST}/.git/HEAD" > /dev/null || \
             { echo "FAIL: agent should be able to read .git/HEAD"; exit 1; }
           echo "PASS: agent can read .git/HEAD"
 
@@ -937,7 +937,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             -c "echo 'tamper' >> '${WORKSPACE_TEST}/.git/HEAD'" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to .git/HEAD"
             exit 1
@@ -949,7 +949,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/main.py" > /dev/null || \
+            localhost/contAIn:latest "${WORKSPACE_TEST}/main.py" > /dev/null || \
             { echo "FAIL: agent should be able to read main.py"; exit 1; }
           echo "PASS: agent can read main.py"
 
@@ -958,7 +958,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             -c "echo '# comment' >> '${WORKSPACE_TEST}/main.py'" || \
             { echo "FAIL: agent should be able to write to main.py"; exit 1; }
           echo "PASS: agent can write to main.py"
@@ -968,7 +968,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST}/readonly.txt" > /dev/null || \
+            localhost/contAIn:latest "${WORKSPACE_TEST}/readonly.txt" > /dev/null || \
             { echo "FAIL: agent should be able to read readonly.txt"; exit 1; }
           echo "PASS: agent can read readonly.txt"
 
@@ -977,7 +977,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${TEST_DIR}:${WORKSPACE_TEST}:rw" \
             --entrypoint sh \
-            localhost/cont-ai-nerd:latest \
+            localhost/contAIn:latest \
             -c "echo 'tamper' >> '${WORKSPACE_TEST}/readonly.txt'" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to write to readonly.txt"
             exit 1
@@ -1025,7 +1025,7 @@ jobs:
             --user ${AGENT_UID}:${PRIMARY_GID} \
             -v "${TEST_DIR2}:${WORKSPACE_TEST2}:rw" \
             --entrypoint cat \
-            localhost/cont-ai-nerd:latest "${WORKSPACE_TEST2}/.env" 2>/dev/null; then
+            localhost/contAIn:latest "${WORKSPACE_TEST2}/.env" 2>/dev/null; then
             echo "FAIL: agent should NOT be able to read locked .env"
             exit 1
           fi
@@ -1043,46 +1043,46 @@ jobs:
 
           echo "--- Verifying services are still running ---"
           sleep 3
-          sudo podman ps -a --filter name=cont-ai-nerd \
+          sudo podman ps -a --filter name=contain \
             --format 'table {{.Names}}\t{{.Status}}'
-          systemctl is-active cont-ai-nerd-watcher.service
+          systemctl is-active contain-watcher.service
 
           echo "--- Verifying config is unchanged ---"
-          POLICY="$HOME/.config/cont-ai-nerd/opencode.json"
+          POLICY="$HOME/.config/contain/opencode.json"
           jq -e '.permission.external_directory' "$POLICY" > /dev/null
 
           echo ""
           echo "PASS: idempotency"
 
       # ── 16. Test TUI script installation ────────────────────
-      - name: "Test: cont-ai-nerd-tui script"
+      - name: "Test: contain-tui script"
         run: |
           set -euo pipefail
 
           echo "--- Checking TUI script is installed ---"
-          [[ -x /usr/local/bin/cont-ai-nerd-tui ]] || \
-            { echo "FAIL: /usr/local/bin/cont-ai-nerd-tui not found or not executable"; exit 1; }
+          [[ -x /usr/local/bin/contain-tui ]] || \
+            { echo "FAIL: /usr/local/bin/contain-tui not found or not executable"; exit 1; }
 
           echo "--- Checking TUI script is a symlink ---"
-          [[ -L /usr/local/bin/cont-ai-nerd-tui ]] || \
-            { echo "FAIL: /usr/local/bin/cont-ai-nerd-tui is not a symlink"; exit 1; }
+          [[ -L /usr/local/bin/contain-tui ]] || \
+            { echo "FAIL: /usr/local/bin/contain-tui is not a symlink"; exit 1; }
 
           echo "--- Checking symlink target exists ---"
-          TARGET=$(readlink -f /usr/local/bin/cont-ai-nerd-tui)
+          TARGET=$(readlink -f /usr/local/bin/contain-tui)
           [[ -f "$TARGET" ]] || \
             { echo "FAIL: symlink target $TARGET does not exist"; exit 1; }
 
           echo "--- Syntax-checking TUI script ---"
-          TARGET=$(readlink -f /usr/local/bin/cont-ai-nerd-tui)
+          TARGET=$(readlink -f /usr/local/bin/contain-tui)
           bash -n "$TARGET"
 
           echo "--- Asserting TUI uses systemctl is-active (not podman ps) ---"
           grep -q "systemctl is-active" "$TARGET" || \
             { echo "FAIL: TUI does not use systemctl is-active"; exit 1; }
-          grep -qv "podman ps.*cont-ai-nerd" "$TARGET" || \
+          grep -qv "podman ps.*contain" "$TARGET" || \
             { echo "FAIL: TUI still uses podman ps"; exit 1; }
 
-          echo "PASS: cont-ai-nerd-tui script"
+          echo "PASS: contain-tui script"
 
       # ── 16a. Test Nix TUI handles missing OpenCode dirs ─────
       - name: "Test: Nix TUI handles missing OpenCode dirs"
@@ -1090,11 +1090,11 @@ jobs:
           set -euo pipefail
 
           echo "--- Simulating partially-failed nixos-rebuild activation ---"
-          # On NixOS, the cont-ai-nerd-image activation step (podman build) runs
-          # before cont-ai-nerd-dirs.  If the build aborted (e.g. groupadd exit 9),
-          # cont-ai-nerd-dirs never ran and ~/.local/share/opencode never existed.
+          # On NixOS, the contain-image activation step (podman build) runs
+          # before contain-dirs.  If the build aborted (e.g. groupadd exit 9),
+          # contain-dirs never ran and ~/.local/share/opencode never existed.
           # The Nix tuiScript has a defensive guard that creates these dirs when
-          # running as root (sudo cont-ai-nerd-tui).  The dir assertions below
+          # running as root (sudo contain-tui).  The dir assertions below
           # validate the guard by checking that setup.sh re-creates them correctly.
           sudo rm -rf "$HOME/.local/share/opencode" "$HOME/.config/opencode"
 
@@ -1150,15 +1150,15 @@ jobs:
           # at `podman run` because accessing the rootful image store requires root.
           # The critical assertion is that it does NOT emit "container is not running".
 
-          echo "--- Verifying cont-ai-nerd.service is active (rootful) ---"
-          systemctl is-active cont-ai-nerd.service || \
-            { echo "SKIP: cont-ai-nerd.service is not active; skipping test"; exit 0; }
+          echo "--- Verifying contain.service is active (rootful) ---"
+          systemctl is-active contain.service || \
+            { echo "SKIP: contain.service is not active; skipping test"; exit 0; }
 
           echo "--- Asserting TUI source uses systemctl is-active (not podman ps) ---"
-          TARGET=$(readlink -f /usr/local/bin/cont-ai-nerd-tui)
+          TARGET=$(readlink -f /usr/local/bin/contain-tui)
           grep -q "systemctl is-active" "$TARGET" || \
             { echo "FAIL: TUI does not use systemctl is-active (Bug 2 regression)"; exit 1; }
-          grep -qv "podman ps.*cont-ai-nerd" "$TARGET" || \
+          grep -qv "podman ps.*contain" "$TARGET" || \
             { echo "FAIL: TUI still uses podman ps (Bug 2 regression)"; exit 1; }
 
           echo "PASS: TUI service check works without sudo (Bug 2)"
@@ -1167,7 +1167,7 @@ jobs:
       - name: "Test: path_map in config.json"
         run: |
           set -euo pipefail
-          CONFIG="$HOME/.config/cont-ai-nerd/config.json"
+          CONFIG="$HOME/.config/contain/config.json"
 
           echo "--- Checking path_map exists in config ---"
           jq -e '.path_map' "$CONFIG" > /dev/null || \
@@ -1202,28 +1202,28 @@ jobs:
           set -euo pipefail
 
           echo "--- Checking symlink for Projects ---"
-          LINK=$(sudo podman exec cont-ai-nerd readlink "$HOME/Projects")
+          LINK=$(sudo podman exec contain readlink "$HOME/Projects")
           echo "    $HOME/Projects -> $LINK"
           [[ "$LINK" == "/workspace/Projects" ]] || \
             { echo "FAIL: expected symlink to /workspace/Projects, got '$LINK'"; exit 1; }
           echo "PASS: Projects symlink correct"
 
           echo "--- Checking symlink for work ---"
-          LINK=$(sudo podman exec cont-ai-nerd readlink "$HOME/work")
+          LINK=$(sudo podman exec contain readlink "$HOME/work")
           echo "    $HOME/work -> $LINK"
           [[ "$LINK" == "/workspace/work" ]] || \
             { echo "FAIL: expected symlink to /workspace/work, got '$LINK'"; exit 1; }
           echo "PASS: work symlink correct"
 
           echo "--- Checking parent directory exists and is owned by root ---"
-          PARENT_OWNER=$(sudo podman exec cont-ai-nerd stat -c '%U' "$(dirname "$HOME/Projects")")
+          PARENT_OWNER=$(sudo podman exec contain stat -c '%U' "$(dirname "$HOME/Projects")")
           echo "    Parent dir owner: $PARENT_OWNER"
           [[ "$PARENT_OWNER" == "root" ]] || \
             { echo "FAIL: parent dir owner=$PARENT_OWNER, expected root"; exit 1; }
           echo "PASS: parent directory owned by root"
 
           echo "--- Checking ls through symlink shows real contents ---"
-          sudo podman exec cont-ai-nerd ls "$HOME/Projects" > /dev/null
+          sudo podman exec contain ls "$HOME/Projects" > /dev/null
           echo "PASS: ls through symlink works"
 
           echo ""
@@ -1238,12 +1238,12 @@ jobs:
 
           echo "--- Listing synthetic home dir inside container ---"
           CONTENTS=$(sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            cont-ai-nerd /bin/sh -c "ls -la $(dirname "$HOME/Projects")/ 2>&1") || true
+            contain /bin/sh -c "ls -la $(dirname "$HOME/Projects")/ 2>&1") || true
           echo "$CONTENTS"
 
           echo "--- Agent cannot read .bashrc from host home ---"
           if sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            cont-ai-nerd cat "$(dirname "$HOME/Projects")/.bashrc" 2>/dev/null; then
+            contain cat "$(dirname "$HOME/Projects")/.bashrc" 2>/dev/null; then
             echo "FAIL: agent could read .bashrc from host home"
             exit 1
           fi
@@ -1251,7 +1251,7 @@ jobs:
 
           echo "--- Agent cannot read .ssh from host home ---"
           if sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            cont-ai-nerd ls "$(dirname "$HOME/Projects")/.ssh/" 2>/dev/null; then
+            contain ls "$(dirname "$HOME/Projects")/.ssh/" 2>/dev/null; then
             echo "FAIL: agent could list .ssh from host home"
             exit 1
           fi
@@ -1259,7 +1259,7 @@ jobs:
 
           echo "--- Agent cannot create files in synthetic home dir ---"
           if sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            cont-ai-nerd touch "$(dirname "$HOME/Projects")/test_escape" 2>/dev/null; then
+            contain touch "$(dirname "$HOME/Projects")/test_escape" 2>/dev/null; then
             echo "FAIL: agent could create files in host home"
             exit 1
           fi
@@ -1278,7 +1278,7 @@ jobs:
           echo "--- Running whoami with host-side Projects path as cwd ---"
           RESULT=$(sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
             --workdir "$HOME/Projects/myproject" \
-            cont-ai-nerd /usr/bin/bash -c 'whoami')
+            contain /usr/bin/bash -c 'whoami')
           [[ "$RESULT" == "agent" ]] || \
             { echo "FAIL: whoami returned '$RESULT', expected 'agent'"; exit 1; }
           echo "PASS: whoami works with host-side cwd (Projects/myproject)"
@@ -1286,14 +1286,14 @@ jobs:
           echo "--- Running whoami with host-side work path as cwd ---"
           RESULT=$(sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
             --workdir "$HOME/work/mywork" \
-            cont-ai-nerd /usr/bin/bash -c 'whoami')
+            contain /usr/bin/bash -c 'whoami')
           [[ "$RESULT" == "agent" ]] || \
             { echo "FAIL: whoami returned '$RESULT', expected 'agent'"; exit 1; }
           echo "PASS: whoami works with host-side cwd (work/mywork)"
 
           echo "--- File operations via host-side path ---"
           sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
-            cont-ai-nerd /usr/bin/bash -c "echo 'spawn-test' > '$HOME/Projects/myproject/spawn_test_file'"
+            contain /usr/bin/bash -c "echo 'spawn-test' > '$HOME/Projects/myproject/spawn_test_file'"
           [[ -f "$HOME/Projects/myproject/spawn_test_file" ]] || \
             { echo "FAIL: file not created on host"; exit 1; }
           grep -q 'spawn-test' "$HOME/Projects/myproject/spawn_test_file" || \
@@ -1304,7 +1304,7 @@ jobs:
           echo "--- ls via host-side path ---"
           sudo podman exec --user ${AGENT_UID}:${PRIMARY_GID} \
             --workdir "$HOME/Projects/myproject" \
-            cont-ai-nerd /usr/bin/bash -c 'ls -la' > /dev/null
+            contain /usr/bin/bash -c 'ls -la' > /dev/null
           echo "PASS: ls works with host-side cwd"
 
           echo ""
@@ -1319,7 +1319,7 @@ jobs:
           EXPECTED_GROUP="$(id -gn)"
 
           echo "--- Creating file via symlinked host path inside container ---"
-          sudo podman exec --user agent cont-ai-nerd touch "$HOME/Projects/myproject/${TEST_FILE}"
+          sudo podman exec --user agent contain touch "$HOME/Projects/myproject/${TEST_FILE}"
 
           echo "--- Waiting for watcher to process (polling up to 10s) ---"
           for i in $(seq 1 20); do
@@ -1375,11 +1375,11 @@ jobs:
 
           echo ""
           echo "=== systemctl status ==="
-          systemctl status cont-ai-nerd.service --no-pager 2>&1 || true
+          systemctl status contain.service --no-pager 2>&1 || true
           echo "---"
-          systemctl status cont-ai-nerd-watcher.service --no-pager 2>&1 || true
+          systemctl status contain-watcher.service --no-pager 2>&1 || true
           echo "---"
-          systemctl list-timers cont-ai-nerd-commit --no-pager 2>&1 || true
+          systemctl list-timers contain-commit --no-pager 2>&1 || true
 
           echo ""
           echo "=== podman ps ==="
@@ -1387,31 +1387,31 @@ jobs:
 
           echo ""
           echo "=== container logs ==="
-          sudo podman logs cont-ai-nerd 2>&1 | tail -50 || true
+          sudo podman logs contain 2>&1 | tail -50 || true
 
           echo ""
-          echo "=== journal (cont-ai-nerd) ==="
-          journalctl -u cont-ai-nerd --no-pager -n 30 2>&1 || true
+          echo "=== journal (contain) ==="
+          journalctl -u contain --no-pager -n 30 2>&1 || true
 
           echo ""
           echo "=== journal (watcher) ==="
-          journalctl -u cont-ai-nerd-watcher --no-pager -n 30 2>&1 || true
+          journalctl -u contain-watcher --no-pager -n 30 2>&1 || true
 
           echo ""
           echo "=== generated quadlet ==="
-          cat /etc/containers/systemd/cont-ai-nerd.container 2>&1 || true
+          cat /etc/containers/systemd/contain.container 2>&1 || true
 
           echo ""
           echo "=== generated watcher service ==="
-          cat /etc/systemd/system/cont-ai-nerd-watcher.service 2>&1 || true
+          cat /etc/systemd/system/contain-watcher.service 2>&1 || true
 
           echo ""
-          echo "=== cont-ai-nerd config.json ==="
-          cat "$HOME/.config/cont-ai-nerd/config.json" 2>&1 || true
+          echo "=== contain config.json ==="
+          cat "$HOME/.config/contain/config.json" 2>&1 || true
 
           echo ""
-          echo "=== cont-ai-nerd opencode.json ==="
-          cat "$HOME/.config/cont-ai-nerd/opencode.json" 2>&1 || true
+          echo "=== contain opencode.json ==="
+          cat "$HOME/.config/contain/opencode.json" 2>&1 || true
 
           echo ""
           echo "=== project directory ==="

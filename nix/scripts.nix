@@ -25,7 +25,7 @@ let
   ];
 in
 stdenvNoCC.mkDerivation {
-  pname = "cont-ai-nerd-scripts";
+  pname = "contain-scripts";
   version = "0.1.0";
 
   src = ../.;
@@ -40,17 +40,17 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
 
     # ── lib/ scripts (runtime helpers invoked by systemd services) ──
-    install -Dm755 lib/cont-ai-nerd-watcher.sh "$out/lib/cont-ai-nerd/cont-ai-nerd-watcher.sh"
-    install -Dm755 lib/cont-ai-nerd-commit.sh  "$out/lib/cont-ai-nerd/cont-ai-nerd-commit.sh"
+    install -Dm755 lib/contain-watcher.sh "$out/lib/contain/contain-watcher.sh"
+    install -Dm755 lib/contain-commit.sh  "$out/lib/contain/contain-commit.sh"
 
     # ── scripts/ (admin / setup tools) ──
-    install -Dm755 scripts/prepare-permissions.sh "$out/bin/cont-ai-nerd-prepare-permissions"
+    install -Dm755 scripts/prepare-permissions.sh "$out/bin/contain-prepare-permissions"
 
     # ── Wrap every installed script with the full runtime PATH ──
     for f in \
-      "$out/lib/cont-ai-nerd/cont-ai-nerd-watcher.sh" \
-      "$out/lib/cont-ai-nerd/cont-ai-nerd-commit.sh" \
-      "$out/bin/cont-ai-nerd-prepare-permissions" \
+      "$out/lib/contain/contain-watcher.sh" \
+      "$out/lib/contain/contain-commit.sh" \
+      "$out/bin/contain-prepare-permissions" \
     ; do
       wrapProgram "$f" \
         --prefix PATH : "${lib.makeBinPath runtimeDeps}"
@@ -60,7 +60,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   meta = with lib; {
-    description = "cont-ai-nerd helper scripts with Nix-wrapped PATH";
+    description = "contain helper scripts with Nix-wrapped PATH";
     license     = licenses.cc-by-nc-40;
     platforms   = platforms.linux;
   };

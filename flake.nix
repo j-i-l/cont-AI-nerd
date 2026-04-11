@@ -1,5 +1,5 @@
 {
-  description = "cont-ai-nerd - Sandboxed AI coding agent in a rootful Podman container";
+  description = "contain - Sandboxed AI coding agent in a rootful Podman container";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -27,7 +27,7 @@
       let pkgs = nixpkgs.legacyPackages.${system};
       in {
         default = pkgs.mkShell {
-          name = "cont-ai-nerd-dev";
+          name = "contain-dev";
           packages = with pkgs; [
             bash
             jq

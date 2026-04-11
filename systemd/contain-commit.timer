@@ -1,5 +1,5 @@
 [Unit]
-Description=Periodic cont-ai-nerd Container Commit
+Description=Periodic contain Container Commit
 
 [Timer]
 OnCalendar=daily

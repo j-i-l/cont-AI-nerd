@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# configure.sh — cont-ai-nerd: interactive configuration generator
+# configure.sh — contain: interactive configuration generator
 # =========================================================================
-# Creates or updates ~/.config/cont-ai-nerd/config.json with user-provided
+# Creates or updates ~/.config/contain/config.json with user-provided
 # values. This script can be run standalone before setup.sh, or setup.sh
 # will invoke it automatically if no config exists.
 #
@@ -101,10 +101,10 @@ DETECTED_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "")}"
 
 echo ""
 echo -e "${BOLD}=================================================================${RESET}"
-echo -e "${BOLD}  cont-ai-nerd — Configuration${RESET}"
+echo -e "${BOLD}  contain — Configuration${RESET}"
 echo -e "${BOLD}=================================================================${RESET}"
 echo ""
-echo "This script will create the configuration file for cont-ai-nerd."
+echo "This script will create the configuration file for contain."
 echo "Press Enter to accept the default value shown in brackets."
 echo ""
 
@@ -220,14 +220,14 @@ while true; do
 done
 
 # ── Install directory ────────────────────────────────────────────────────
-prompt "Installation directory" "/opt/cont-ai-nerd" INSTALL_DIR
+prompt "Installation directory" "/opt/contain" INSTALL_DIR
 
 if [[ -z "$INSTALL_DIR" ]]; then
-  INSTALL_DIR="/opt/cont-ai-nerd"
+  INSTALL_DIR="/opt/contain"
 fi
 
 # ── Generate config file ─────────────────────────────────────────────────
-CONFIG_DIR="${PRIMARY_HOME}/.config/cont-ai-nerd"
+CONFIG_DIR="${PRIMARY_HOME}/.config/contain"
 CONFIG_FILE="${CONFIG_DIR}/config.json"
 
 mkdir -p "$CONFIG_DIR"

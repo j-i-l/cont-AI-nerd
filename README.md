@@ -1,8 +1,8 @@
-# cont[AI]*nerd*
+# contAIn
 
 **Sandboxed AI coding agent powered by [OpenCode](https://opencode.ai), running in a rootful Podman container with file system isolation and automatic change tracking.**
 
-cont[AI]*nerd* provides a secure, containerized environment for running an AI coding assistant that can read and write files in your project directories while maintaining strict isolation from the rest of your system.
+contAIn provides a secure, containerized environment for running an AI coding assistant that can read and write files in your project directories while maintaining strict isolation from the rest of your system.
 
 ---
 
@@ -36,7 +36,7 @@ cont[AI]*nerd* provides a secure, containerized environment for running an AI co
 
 ## Overview
 
-cont[AI]*nerd* creates a sandboxed environment where an AI coding agent (OpenCode) can:
+contAIn creates a sandboxed environment where an AI coding agent (OpenCode) can:
 
 - **Read and modify files** in designated project directories
 - **Run in isolation** from your host system
@@ -87,7 +87,7 @@ cont[AI]*nerd* creates a sandboxed environment where an AI coding agent (OpenCod
 │                                    ▼                                    │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │                    PODMAN CONTAINER                              │   │
-│  │                    (cont-ai-nerd)                                │   │
+│  │                    (contain)                                │   │
 │  ├──────────────────────────────────────────────────────────────────┤   │
 │  │                                                                  │   │
 │  │  ┌────────────────────────────────────────────────────────────┐  │   │
@@ -103,7 +103,7 @@ cont[AI]*nerd* creates a sandboxed environment where an AI coding agent (OpenCod
 │  │    - ~/.config/opencode → /home/agent/.config/opencode (ro)      │   │
 │  │    - ~/.local/share/opencode → /home/agent/.local/share/... (rw) │   │
 │  │    - ~/.local/state/opencode → /home/agent/.local/state/... (rw) │   │
-│  │    - ~/.config/cont-ai-nerd/config.json → /etc/cont-ai-nerd/ (ro)│   │
+│  │    - ~/.config/contain/config.json → /etc/contain/ (ro)│   │
 │  │                                                                  │   │
 │  │  Mounts (paths are examples, configured via config.json):        │   │
 │  │    - /home/alice/Projects → /workspace/Projects (rw)             │   │
@@ -122,7 +122,7 @@ cont[AI]*nerd* creates a sandboxed environment where an AI coding agent (OpenCod
 
 ## Prerequisites
 
-Before installing cont[AI]*nerd*, ensure your system meets the following requirements:
+Before installing contAIn, ensure your system meets the following requirements:
 
 ### Required
 
@@ -185,7 +185,7 @@ sudo ./scripts/configure.sh
 sudo ./scripts/setup.sh
 
 # Start the TUI (with auth capability)
-sudo cont-ai-nerd-tui
+sudo contain-tui
 ```
 
 ### Step 1: Clone the Repository
@@ -207,10 +207,10 @@ You'll be prompted for the following settings:
 
 ```
 =================================================================
-  cont-ai-nerd — Configuration
+  contain — Configuration
 =================================================================
 
-This script will create the configuration file for cont-ai-nerd.
+This script will create the configuration file for contain.
 Press Enter to accept the default value shown in brackets.
 
 Primary user [alice]: 
@@ -219,18 +219,18 @@ Project directories (comma-separated) [/home/alice/Projects]:
 Container agent username [agent]: 
 Server listen address [127.0.0.1]: 
 Server listen port [3000]: 
-Installation directory [/opt/cont-ai-nerd]: 
+Installation directory [/opt/contain]: 
 ```
 
-The configuration is saved to `~/.config/cont-ai-nerd/config.json`.
+The configuration is saved to `~/.config/contain/config.json`.
 
 #### Manual Configuration (Optional)
 
 If you prefer to create the configuration file manually:
 
 ```bash
-mkdir -p ~/.config/cont-ai-nerd
-cat > ~/.config/cont-ai-nerd/config.json << 'EOF'
+mkdir -p ~/.config/contain
+cat > ~/.config/contain/config.json << 'EOF'
 {
   "primary_user": "your-username",
   "primary_home": "/home/your-username",
@@ -241,10 +241,10 @@ cat > ~/.config/cont-ai-nerd/config.json << 'EOF'
   "agent_user": "agent",
   "host": "127.0.0.1",
   "port": 3000,
-  "install_dir": "/opt/cont-ai-nerd"
+  "install_dir": "/opt/contain"
 }
 EOF
-chmod 640 ~/.config/cont-ai-nerd/config.json
+chmod 640 ~/.config/contain/config.json
 ```
 
 ### Step 3: Setup
@@ -261,8 +261,8 @@ The setup script will:
 2. **Configure permissions** — Set up project directory traversal
 3. **Generate policies** — Create OpenCode permission policies
 4. **Create directories** — Ensure OpenCode config/data directories exist
-5. **Build container** — Build the cont-ai-nerd container image
-6. **Install scripts** — Copy helper scripts to `/opt/cont-ai-nerd`
+5. **Build container** — Build the contain container image
+6. **Install scripts** — Copy helper scripts to `/opt/contain`
 7. **Install systemd units** — Set up Quadlet and service files
 8. **Activate services** — Start the container and auxiliary services
 
@@ -270,13 +270,13 @@ Upon completion, you'll see:
 
 ```
 =================================================================
-  cont-ai-nerd setup complete.
+  contain setup complete.
 
-   Container : podman ps | grep cont-ai-nerd
-   TUI       : sudo cont-ai-nerd-tui
-   Watcher   : systemctl status cont-ai-nerd-watcher
-   Commits   : systemctl list-timers cont-ai-nerd-commit
-   Logs      : journalctl -u cont-ai-nerd -f
+   Container : podman ps | grep contain
+   TUI       : sudo contain-tui
+   Watcher   : systemctl status contain-watcher
+   Commits   : systemctl list-timers contain-commit
+   Logs      : journalctl -u contain -f
 =================================================================
 ```
 
@@ -287,7 +287,7 @@ Upon completion, you'll see:
 ### Starting the TUI
 
 ```bash
-sudo cont-ai-nerd-tui
+sudo contain-tui
 ```
 
 This attaches an interactive TUI to the headless OpenCode server running inside the container. You can use `/connect` to authenticate with your LLM provider — credentials are saved automatically and persist across sessions (no restart needed).
@@ -300,10 +300,10 @@ On first use, run `/connect` in the TUI to authenticate with your preferred LLM 
 
 ```bash
 # Start with a specific session
-sudo cont-ai-nerd-tui --session <session-id>
+sudo contain-tui --session <session-id>
 
 # Start in a specific directory (container path)
-sudo cont-ai-nerd-tui --dir /workspace/Projects/myproject
+sudo contain-tui --dir /workspace/Projects/myproject
 ```
 
 ### Monitoring
@@ -312,46 +312,46 @@ sudo cont-ai-nerd-tui --dir /workspace/Projects/myproject
 
 ```bash
 # View running container
-podman ps | grep cont-ai-nerd
+podman ps | grep contain
 
 # Detailed container info
-podman inspect cont-ai-nerd
+podman inspect contain
 ```
 
 #### Check Service Status
 
 ```bash
 # Container service (via systemd generator)
-systemctl status cont-ai-nerd
+systemctl status contain
 
 # File watcher service
-systemctl status cont-ai-nerd-watcher
+systemctl status contain-watcher
 
 # Commit timer
-systemctl list-timers cont-ai-nerd-commit
+systemctl list-timers contain-commit
 ```
 
 ### Viewing Logs
 
 ```bash
 # Container logs (follow mode)
-journalctl -u cont-ai-nerd -f
+journalctl -u contain -f
 
 # File watcher logs
-journalctl -u cont-ai-nerd-watcher -f
+journalctl -u contain-watcher -f
 
 # Commit service logs
-journalctl -u cont-ai-nerd-commit
+journalctl -u contain-commit
 
-# All cont-ai-nerd related logs
-journalctl -u 'cont-ai-nerd*' --since "1 hour ago"
+# All contain related logs
+journalctl -u 'contain*' --since "1 hour ago"
 ```
 
 ---
 
 ## Configuration Reference
 
-The configuration file is located at `~/.config/cont-ai-nerd/config.json`.
+The configuration file is located at `~/.config/contain/config.json`.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -361,7 +361,7 @@ The configuration file is located at `~/.config/cont-ai-nerd/config.json`.
 | `agent_user` | string | No | `"agent"` | Username for the container agent |
 | `host` | string | No | `"127.0.0.1"` | Address the server listens on |
 | `port` | number | No | `3000` | Port the server listens on |
-| `install_dir` | string | No | `"/opt/cont-ai-nerd"` | Where helper scripts are installed |
+| `install_dir` | string | No | `"/opt/contain"` | Where helper scripts are installed |
 
 ### Example Configuration
 
@@ -377,7 +377,7 @@ The configuration file is located at `~/.config/cont-ai-nerd/config.json`.
   "agent_user": "agent",
   "host": "127.0.0.1",
   "port": 3000,
-  "install_dir": "/opt/cont-ai-nerd"
+  "install_dir": "/opt/contain"
 }
 ```
 
@@ -400,7 +400,7 @@ sudo ./scripts/setup.sh
 
 ### Container Isolation
 
-cont[AI]*nerd* uses rootful Podman to create a container that:
+contAIn uses rootful Podman to create a container that:
 
 - **Maps UIDs 1:1** — The `agent` user inside the container has the same UID as the host `agent` user
 - **Uses host networking** — Simplifies access; server binds to localhost only
@@ -516,13 +516,13 @@ When locked, sensitive files get mode `600` (files) or `700` (directories), maki
 
 ### Systemd Services
 
-cont[AI]*nerd* installs three systemd components:
+contAIn installs three systemd components:
 
 | Component | Type | Purpose |
 |-----------|------|---------|
-| `cont-ai-nerd.service` | Quadlet (generated) | Runs the container |
-| `cont-ai-nerd-watcher.service` | Service | Monitors files, fixes permissions |
-| `cont-ai-nerd-commit.timer` | Timer | Triggers periodic container commits |
+| `contain.service` | Quadlet (generated) | Runs the container |
+| `contain-watcher.service` | Service | Monitors files, fixes permissions |
+| `contain-commit.timer` | Timer | Triggers periodic container commits |
 
 **Quadlet Integration:**
 
@@ -538,10 +538,10 @@ The commit timer runs hourly to persist container state:
 
 ```bash
 # View timer schedule
-systemctl list-timers cont-ai-nerd-commit
+systemctl list-timers contain-commit
 
 # Manual commit
-sudo systemctl start cont-ai-nerd-commit
+sudo systemctl start contain-commit
 ```
 
 This preserves:
@@ -569,7 +569,7 @@ This preserves:
 
 ### OpenCode Policy File
 
-An OpenCode policy file is automatically generated at `~/.config/cont-ai-nerd/opencode.json`:
+An OpenCode policy file is automatically generated at `~/.config/contain/opencode.json`:
 
 ```json
 {
@@ -605,8 +605,8 @@ OpenCode credentials are stored in `~/.local/share/opencode/auth.json` on the ho
 
 **Check the service status:**
 ```bash
-systemctl status cont-ai-nerd
-journalctl -u cont-ai-nerd -n 50
+systemctl status contain
+journalctl -u contain -n 50
 ```
 
 **Common causes:**
@@ -636,25 +636,25 @@ This script sets appropriate permissions while protecting sensitive files (`.env
 
 **Ensure the container is running:**
 ```bash
-podman ps | grep cont-ai-nerd
+podman ps | grep contain
 ```
 
 **Check the server is listening:**
 ```bash
-podman exec cont-ai-nerd ss -tlnp | grep 3000
+podman exec contain ss -tlnp | grep 3000
 ```
 
 **Try restarting the container:**
 ```bash
-sudo systemctl restart cont-ai-nerd
+sudo systemctl restart contain
 ```
 
 ### File Watcher Not Working
 
 **Check the service:**
 ```bash
-systemctl status cont-ai-nerd-watcher
-journalctl -u cont-ai-nerd-watcher -f
+systemctl status contain-watcher
+journalctl -u contain-watcher -f
 ```
 
 **Ensure inotify-tools is installed:**
@@ -669,12 +669,12 @@ sudo apt install inotify-tools  # Ubuntu
 
 **Verify credentials are mounted:**
 ```bash
-sudo podman exec cont-ai-nerd ls -la /home/agent/.local/share/opencode/
+sudo podman exec contain ls -la /home/agent/.local/share/opencode/
 ```
 
 **Re-authenticate using the TUI:**
 ```bash
-sudo cont-ai-nerd-tui
+sudo contain-tui
 # Then run: /connect
 ```
 
@@ -682,7 +682,7 @@ sudo cont-ai-nerd-tui
 
 The container is limited to 2GB RAM. To increase:
 
-1. Edit `systemd/cont-ai-nerd.container.in`
+1. Edit `systemd/contain.container.in`
 2. Change `--memory 2g` to a higher value
 3. Re-run `sudo ./scripts/setup.sh`
 
@@ -690,32 +690,32 @@ The container is limited to 2GB RAM. To increase:
 
 ## Uninstallation
 
-To completely remove cont[AI]*nerd*:
+To completely remove contAIn:
 
 ```bash
 # Stop and disable services
-sudo systemctl stop cont-ai-nerd-watcher
-sudo systemctl stop cont-ai-nerd-commit.timer
-sudo systemctl stop cont-ai-nerd
-sudo systemctl disable cont-ai-nerd-watcher
-sudo systemctl disable cont-ai-nerd-commit.timer
+sudo systemctl stop contain-watcher
+sudo systemctl stop contain-commit.timer
+sudo systemctl stop contain
+sudo systemctl disable contain-watcher
+sudo systemctl disable contain-commit.timer
 
 # Remove systemd units
-sudo rm /etc/systemd/system/cont-ai-nerd-watcher.service
-sudo rm /etc/systemd/system/cont-ai-nerd-commit.service
-sudo rm /etc/systemd/system/cont-ai-nerd-commit.timer
-sudo rm /etc/containers/systemd/cont-ai-nerd.container
+sudo rm /etc/systemd/system/contain-watcher.service
+sudo rm /etc/systemd/system/contain-commit.service
+sudo rm /etc/systemd/system/contain-commit.timer
+sudo rm /etc/containers/systemd/contain.container
 sudo systemctl daemon-reload
 
 # Remove the container and image
-sudo podman rm -f cont-ai-nerd
-sudo podman rmi localhost/cont-ai-nerd:latest
+sudo podman rm -f contain
+sudo podman rmi localhost/contain:latest
 
 # Remove helper scripts
-sudo rm -rf /opt/cont-ai-nerd
+sudo rm -rf /opt/contain
 
 # Remove configuration (optional)
-rm -rf ~/.config/cont-ai-nerd
+rm -rf ~/.config/contain
 
 # Remove the agent user (optional)
 sudo userdel agent
@@ -780,7 +780,7 @@ shellcheck scripts/*.sh lib/*.sh container/*.sh
 # Test the full setup process
 sudo ./scripts/configure.sh
 sudo ./scripts/setup.sh
-podman exec -it cont-ai-nerd opencode-tui
+podman exec -it contain opencode-tui
 ```
 
 ### Reporting Issues
@@ -789,7 +789,7 @@ When reporting bugs, please include:
 
 - Operating system and version
 - Podman version (`podman --version`)
-- Relevant log output (`journalctl -u cont-ai-nerd`)
+- Relevant log output (`journalctl -u contain`)
 - Steps to reproduce
 
 ---
@@ -814,6 +814,6 @@ See [LICENSE](LICENSE) for the full license text.
 
 ## Acknowledgments
 
-- [OpenCode](https://opencode.ai) — The AI coding agent powering cont[AI]*nerd*
+- [OpenCode](https://opencode.ai) — The AI coding agent powering contAIn
 - [Podman](https://podman.io) — Daemonless container engine
 - [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) — Systemd integration for Podman

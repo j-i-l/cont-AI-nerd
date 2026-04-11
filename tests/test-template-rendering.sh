@@ -96,9 +96,9 @@ VOLUME_LINES_1=$(build_volume_lines \
   "/workspace/Projects")
 
 RENDERED_1=$(render_container_unit \
-  "${SYSTEMD_DIR}/cont-ai-nerd.container.in" \
+  "${SYSTEMD_DIR}/contAIn.container.in" \
   "/home/alice" \
-  "/home/alice/.config/cont-ai-nerd" \
+  "/home/alice/.config/contain" \
   "127.0.0.1" \
   "3000" \
   "$VOLUME_LINES_1")
@@ -107,7 +107,7 @@ assert_no_unreplaced_placeholders "$RENDERED_1" "single-path"
 assert_no_directives_before_first_section "$RENDERED_1" "single-path"
 assert_line_count "$RENDERED_1" "Volume=/home/alice/Projects:/workspace/Projects:rw,Z" 1 \
   "single-path: project volume present"
-assert_contains "$RENDERED_1" "Volume=/home/alice/.config/cont-ai-nerd/opencode.json:/etc/cont-ai-nerd/opencode.json:ro" \
+assert_contains "$RENDERED_1" "Volume=/home/alice/.config/contain/opencode.json:/etc/contain/opencode.json:ro" \
   "single-path: policy volume resolved"
 assert_contains "$RENDERED_1" "Volume=/home/alice/.config/opencode:/home/agent/.config/opencode:ro" \
   "single-path: opencode config volume resolved"
@@ -128,9 +128,9 @@ VOLUME_LINES_3=$(build_volume_lines \
 /workspace/shared")
 
 RENDERED_3=$(render_container_unit \
-  "${SYSTEMD_DIR}/cont-ai-nerd.container.in" \
+  "${SYSTEMD_DIR}/contAIn.container.in" \
   "/home/bob" \
-  "/home/bob/.config/cont-ai-nerd" \
+  "/home/bob/.config/contain" \
   "0.0.0.0" \
   "8080" \
   "$VOLUME_LINES_3")
@@ -158,9 +158,9 @@ VOLUME_LINES_SPACE=$(build_volume_lines \
   "/workspace/My Projects/app")
 
 RENDERED_SPACE=$(render_container_unit \
-  "${SYSTEMD_DIR}/cont-ai-nerd.container.in" \
+  "${SYSTEMD_DIR}/contAIn.container.in" \
   "/home/user" \
-  "/home/user/.config/cont-ai-nerd" \
+  "/home/user/.config/contain" \
   "127.0.0.1" \
   "3000" \
   "$VOLUME_LINES_SPACE")
@@ -176,8 +176,8 @@ echo ""
 echo "=== Watcher service template ==="
 
 RENDERED_WATCHER=$(render_watcher_unit \
-  "${SYSTEMD_DIR}/cont-ai-nerd-watcher.service.in" \
-  "/opt/cont-ai-nerd" \
+  "${SYSTEMD_DIR}/contain-watcher.service.in" \
+  "/opt/contain" \
   "alice" \
   "agent" \
   "/home/alice/Projects /home/alice/Work")
@@ -185,7 +185,7 @@ RENDERED_WATCHER=$(render_watcher_unit \
 assert_no_unreplaced_placeholders "$RENDERED_WATCHER" "watcher"
 assert_no_directives_before_first_section "$RENDERED_WATCHER" "watcher"
 assert_contains "$RENDERED_WATCHER" \
-  "ExecStart=/opt/cont-ai-nerd/cont-ai-nerd-watcher.sh alice agent /home/alice/Projects /home/alice/Work" \
+  "ExecStart=/opt/contain/contain-watcher.sh alice agent /home/alice/Projects /home/alice/Work" \
   "watcher: ExecStart fully resolved"
 
 # ── Test: Commit service template ───────────────────────────────────────
@@ -194,13 +194,13 @@ echo ""
 echo "=== Commit service template ==="
 
 RENDERED_COMMIT=$(render_commit_service \
-  "${SYSTEMD_DIR}/cont-ai-nerd-commit.service" \
-  "/opt/cont-ai-nerd")
+  "${SYSTEMD_DIR}/contain-commit.service" \
+  "/opt/contain")
 
 assert_no_unreplaced_placeholders "$RENDERED_COMMIT" "commit"
 assert_no_directives_before_first_section "$RENDERED_COMMIT" "commit"
 assert_contains "$RENDERED_COMMIT" \
-  "ExecStart=/opt/cont-ai-nerd/cont-ai-nerd-commit.sh" \
+  "ExecStart=/opt/contain/contain-commit.sh" \
   "commit: ExecStart resolved"
 
 # ── Test: build_volume_lines helper ─────────────────────────────────────

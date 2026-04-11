@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cont-ai-nerd-watcher.sh
+# contain-watcher.sh
 # ---------------------------------------------------------------------------
 # Inotify-based daemon that reassigns ownership of files created by the agent
 # user back to the primary (human) user.
@@ -10,7 +10,7 @@
 # so that permissions are correct regardless of how the file was created
 # (e.g. via entrypoint with umask 002, or via podman exec which inherits 022).
 #
-# Usage: cont-ai-nerd-watcher.sh <primary_user> <agent_user> <dir> [<dir>...]
+# Usage: contain-watcher.sh <primary_user> <agent_user> <dir> [<dir>...]
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -27,7 +27,7 @@ fi
 PRIMARY_UID=$(id -u "$PRIMARY_USER")
 AGENT_UID=$(id -u "$AGENT_USER")
 
-echo "cont-ai-nerd watcher starting: primary=${PRIMARY_USER}(${PRIMARY_UID}) agent=${AGENT_USER}(${AGENT_UID})"
+echo "contain watcher starting: primary=${PRIMARY_USER}(${PRIMARY_UID}) agent=${AGENT_USER}(${AGENT_UID})"
 echo "Watching: ${WATCH_DIRS[*]}"
 
 # Monitor for file creation and moves (which look like creates to the target).

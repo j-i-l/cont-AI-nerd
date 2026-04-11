@@ -1,17 +1,17 @@
-# systemd unit — cont-ai-nerd file-ownership watcher
+# systemd unit — contain file-ownership watcher
 # TEMPLATE: setup.sh renders this into /etc/systemd/system/
 #
 # Placeholders (sed-replaced by setup.sh):
 #   INSTALL_DIR, PRIMARY_USER, AGENT_USER, WATCH_DIRS
 
 [Unit]
-Description=cont-ai-nerd File Ownership Watcher
-After=cont-ai-nerd.service
-Wants=cont-ai-nerd.service
+Description=contain File Ownership Watcher
+After=contain.service
+Wants=contain.service
 
 [Service]
 Type=simple
-ExecStart=@@INSTALL_DIR@@/cont-ai-nerd-watcher.sh @@PRIMARY_USER@@ @@AGENT_USER@@ @@WATCH_DIRS@@
+ExecStart=@@INSTALL_DIR@@/contain-watcher.sh @@PRIMARY_USER@@ @@AGENT_USER@@ @@WATCH_DIRS@@
 Restart=on-failure
 RestartSec=5
 

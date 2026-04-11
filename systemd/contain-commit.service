@@ -2,8 +2,8 @@
 # TEMPLATE: setup.sh renders @@INSTALL_DIR@@ then installs to /etc/systemd/system/
 
 [Unit]
-Description=cont-ai-nerd Container State Commit
+Description=contain Container State Commit
 
 [Service]
 Type=oneshot
-ExecStart=@@INSTALL_DIR@@/cont-ai-nerd-commit.sh
+ExecStart=@@INSTALL_DIR@@/contain-commit.sh

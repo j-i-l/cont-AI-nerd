@@ -1,7 +1,11 @@
 # cont[AI]n
 
 <p align="center">
-  <img src="docs/logo.svg" alt="cont[AI]n logo" width="400">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/logo-light.svg">
+    <img src="docs/logo-dark.svg" alt="cont[AI]n logo" width="400">
+  </picture>
 </p>
 
 

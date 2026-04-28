@@ -1,15 +1,28 @@
-# cont[AI]n
+<div align="center">
+  <a name="contain"></a>
 
-<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/logo-light.svg">
     <img src="docs/logo-light.svg" alt="cont[AI]n logo" width="400">
   </picture>
+
+<p>The Coding Agent Sandbox
+  <br>
+  providing system isolation and automated change tracking
+  <br>
+  for <a href="https://opencode.ai">OpenCode</a> and (soon) others.
 </p>
+</div>
+<div align="center">
+<br><br>
+<pre><small>A project backed by</small>
+<br>
 
+<a href="https://github.com/t4d-gmbh"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/t4d-gmbh/.github/main/static/logo/wb/T4D_design_develop.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/t4d-gmbh/.github/main/static/logo/bw/T4D_design_develop.svg"><img alt="T4D Logo" src="https://raw.githubusercontent.com/t4d-gmbh/.github/main/static/bw/T4D_design_develop.svg" width="220" style="vertical-align: middle;"></picture></a>
+</pre>
+</div>
 
-**Sandboxed AI coding agent powered by [OpenCode](https://opencode.ai), running in a rootful Podman container with file system isolation and automatic change tracking.**
 
 cont[AI]n provides a secure, containerized environment for running an AI coding assistant that can read and write files in your project directories while maintaining strict isolation from the rest of your system.
 
@@ -112,7 +125,7 @@ cont[AI]n creates a sandboxed environment where an AI coding agent (OpenCode) ca
 │  │    - ~/.config/opencode → /home/agent/.config/opencode (ro)      │   │
 │  │    - ~/.local/share/opencode → /home/agent/.local/share/... (rw) │   │
 │  │    - ~/.local/state/opencode → /home/agent/.local/state/... (rw) │   │
-│  │    - ~/.config/contain/config.json → /etc/contain/ (ro)│   │
+│  │    - ~/.config/contain/config.json → /etc/contain/ (ro)          │   │
 │  │                                                                  │   │
 │  │  Mounts (paths are examples, configured via config.json):        │   │
 │  │    - /home/alice/Projects → /workspace/Projects (rw)             │   │
